@@ -1,4 +1,4 @@
-use actix_web::{get, post, App, HttpResponse, HttpServer, Responder, web};
+use actix_web::{get, post, App, HttpResponse, HttpRequest, HttpServer, Responder, web};
 use r2d2_postgres::{postgres::NoTls, PostgresConnectionManager};
 use serde::{Deserialize, Serialize};
 use argonautica::{Hasher, Verifier};
@@ -7,6 +7,8 @@ use std::fmt;
 use base64::DecodeError;
 use ring::{rand, signature};
 use std::net::ToSocketAddrs;
+use r2d2::PooledConnection;
+use std::error::Error;
 
 #[get("/")]
 async fn index() -> impl Responder {
@@ -42,12 +44,21 @@ struct SignInModel {
     signature: String,
 }
 
+#[derive(Deserialize)]
+struct SignatureAuthorizationModel {
+    token: String,
+    timestamp: String,
+    signature: String,
+}
+
 enum WebError {
     R2D2(r2d2::Error),
     R2D2PG(r2d2_postgres::postgres::Error),
     Argo(argonautica::Error),
     Decode(DecodeError),
     SerdeJson(serde_json::Error),
+    Invalid(String),
+    Unauthorized(String),
 }
 
 impl From<r2d2::Error> for WebError {
@@ -84,6 +95,8 @@ impl fmt::Debug for WebError {
             WebError::Argo(e) => e.fmt(f),
             WebError::Decode(e) => e.fmt(f),
             WebError::SerdeJson(e) => e.fmt(f),
+            WebError::Invalid(e) => e.fmt(f),
+            WebError::Unauthorized(e) => e.fmt(f),
         }
     }
 }
@@ -147,6 +160,9 @@ async fn register(data: web::Data<AppState>, model: web::Json<RegisterModel>) ->
     }
 }
 
+#[derive(Serialize)]
+struct TokenExpiry { token: String, expires: String }
+
 fn try_sign_in(data: &web::Data<AppState>, model: &web::Json<SignInModel>) -> Result<HttpResponse, WebError> {
     if model.password.chars().count() > 100 ||
         model.password.chars().count() < 10 ||
@@ -163,7 +179,6 @@ fn try_sign_in(data: &web::Data<AppState>, model: &web::Json<SignInModel>) -> Re
     let mut client = pool.get()?;
     let auth = client.query_opt(get_hash_sql, &[&model.username])?;
     if let Some(existing) = auth {
-
         let hash: String = existing.get(0);
         let uid: i32 = existing.get(1);
 
@@ -209,8 +224,6 @@ fn try_sign_in(data: &web::Data<AppState>, model: &web::Json<SignInModel>) -> Re
         txn.execute(insert_token_sql, &[&uid, &token, &stored_public_key, &expires.naive_utc()])?;
         txn.commit()?;
 
-        #[derive(Serialize)]
-        struct TokenExpiry { token: String, expires: String }
         let response = serde_json::to_string(&TokenExpiry { token, expires: expires.format("%+").to_string() })?;
         Ok(HttpResponse::Ok().body(response))
     } else {
@@ -246,20 +259,157 @@ async fn sign_out(data: web::Data<AppState>, model: web::Json<AuthenticationMode
                 Ok(_) => HttpResponse::Ok().body(""),
                 Err(e) => HttpResponse::InternalServerError().body(format!("{:?}", e))
             }
-        },
+        }
         Err(e) => {
             HttpResponse::InternalServerError().body(format!("{:?}", e))
         }
     }
 }
 
+fn try_authenticate(conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>, model: &web::Json<AuthenticationModel>) -> Result<i32, WebError> {
+    if let Ok(ts) = chrono::NaiveDateTime::parse_from_str(&model.timestamp, "%+") {
+        if ts < ts + Duration::minutes(-10) {
+            return Err(WebError::Invalid(String::from("Timestamp is not current")));
+        }
+    }
+
+    let pk_sql = "select public_key, user_main_id from user_session where token = $1";
+    if let Some(pk_row) = conn.query_opt(pk_sql, &[&model.token])? {
+        // TODO: dedup this
+        let pk: String = pk_row.get(0);
+        let signature_message = format!("{}{}", model.timestamp, model.token).into_bytes();
+        let signature_bytes = base64::decode(&model.signature)?;
+        let jwk: JWK = serde_json::from_str(&pk)?;
+        let n = base64::decode_config(&jwk.n, base64::URL_SAFE)?;
+        let e = base64::decode_config(&jwk.e, base64::URL_SAFE)?;
+        let pub_key = signature::RsaPublicKeyComponents { n, e };
+        let alg = &signature::RSA_PKCS1_2048_8192_SHA512;
+        let res = pub_key.verify(alg, &signature_message, &signature_bytes);
+        if !res.is_ok() {
+            return Err(WebError::Invalid(String::from("Invalid signature")));
+        }
+
+        let user_id: i32 = pk_row.get(1);
+        return Ok(user_id);
+    }
+
+    Err(WebError::Invalid(String::from("Could not find token")))
+}
+
+fn try_refresh(conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>, model: &web::Json<AuthenticationModel>, user_id: i32) -> Result<String, WebError> {
+    let remove_session_sql = "/\
+            update user_session set
+                public_key = '',
+                expires = if expires < now() then expires else now() end if
+            where token = $1
+            returning public_key
+        ";
+    let new_session_sql = "/
+            insert into user_session (user_main_id, public_key, token, expires)
+            values ($1, $2, $3, $4)
+        ";
+
+    let mut txn = conn.transaction()?;
+    let pk_maybe = txn.query_one(remove_session_sql, &[&model.token])?;
+    let pk: String = pk_maybe.get(0);
+
+    // new token generated, TODO: dedup this code
+    let mut v: [u8; 64] = [0; 64];
+    let sr = rand::SystemRandom::new();
+    use rand::SecureRandom;
+    sr.fill(&mut v).unwrap();
+    let token = base64::encode(&v);
+    let expires = Utc::now() + Duration::days(30);
+    txn.execute(new_session_sql, &[&user_id, &pk, &token, &expires.naive_utc()])?;
+    txn.commit()?;
+
+    let result = serde_json::to_string(&TokenExpiry { token, expires: expires.format("%+").to_string() })?;
+    Ok(result)
+}
+
 #[post("/sign_in_refresh")]
-async fn sign_in_refresh() -> impl Responder {
-    HttpResponse::Ok().body("Hello world")
+async fn sign_in_refresh(data: web::Data<AppState>, model: web::Json<AuthenticationModel>) -> impl Responder {
+    let pool = data.pool.clone();
+    let mut conn = match pool.get() {
+        Ok(conn) => conn,
+        Err(e) => { return HttpResponse::InternalServerError().body(format!("{:?}", e)); }
+    };
+
+    match try_authenticate(&mut conn, &model)
+        .and_then(|uid| try_refresh(&mut conn, &model, uid)) {
+        Ok(json) => HttpResponse::Ok().body(json),
+        Err(WebError::Invalid(s)) => HttpResponse::BadRequest().body(s),
+        Err(e) => HttpResponse::InternalServerError().body(format!("{:?}", e))
+    }
+}
+
+fn get_conn(data: web::Data<AppState>) -> Result<PooledConnection<PostgresConnectionManager<NoTls>>, WebError> {
+    let pool = data.pool.clone();
+    Ok(pool.get()?)
+}
+
+fn try_a(req: HttpRequest, data: web::Data<AppState>) -> Result<i32, WebError> {
+    // Get the pool
+    let mut conn = get_conn(data)?;
+
+    // Get the header out of the request
+    let authorization_header = req.headers().get("Authorization")
+        .and_then(|h| h.to_str().ok())
+        .ok_or(WebError::Unauthorized(String::from("Authorization header missing")))?;
+
+    // Parse the header
+    let b64_token = if !authorization_header.starts_with("Signature ") {
+        Err(WebError::Unauthorized(String::from("Invalid Authorization header")))
+    } else {
+        Ok(&authorization_header[10..])
+    }?;
+
+    let signature_model_json = base64::decode(b64_token)
+        .map(|v| String::from_utf8(v))?
+        .map_err(|e| WebError::Unauthorized(String::from(e.to_string())))?;
+
+    let model: SignatureAuthorizationModel = serde_json::from_str(&signature_model_json)?;
+
+    // Verify the timestamp is up to date
+    let dt = chrono::DateTime::parse_from_str(&model.timestamp, "yyyy-MM-ddTHH-mm-ss")
+        .map_err(|e| WebError::Unauthorized(String::from(e.to_string())))?
+        .naive_utc();
+    let now = chrono::Utc::now().naive_utc();
+    if dt < now - Duration::minutes(10) || dt > now + Duration::minutes(10) {
+        return Err(WebError::Unauthorized(String::from("Authorization timestamp out of range")))
+    }
+
+    // Get the token from the database
+    let pk_sql = "select public_key, user_main_id from user_session where token = $1";
+    if let Some(pk_row) = conn.query_opt(pk_sql, &[&model.token])? {
+        let pk: String = pk_row.get(0);
+        let signature_message = format!("{}{}", model.timestamp, model.token).into_bytes();
+        let signature_bytes = base64::decode(&model.signature)?;
+        let jwk: JWK = serde_json::from_str(&pk)?;
+        let n = base64::decode_config(&jwk.n, base64::URL_SAFE)?;
+        let e = base64::decode_config(&jwk.e, base64::URL_SAFE)?;
+        let pub_key = signature::RsaPublicKeyComponents { n, e };
+        let alg = &signature::RSA_PKCS1_2048_8192_SHA512;
+        let res = pub_key.verify(alg, &signature_message, &signature_bytes);
+        if res.is_ok() {
+            let user_id: i32 = pk_row.get(1);
+            Ok(user_id)
+        } else {
+            Err(WebError::Invalid(String::from("Invalid signature")))
+        }
+    } else {
+        Err(WebError::Unauthorized(String::from("Token not found")))
+    }
 }
 
 #[post("/change_password")]
-async fn change_password() -> impl Responder {
+async fn change_password(req: HttpRequest, data: web::Data<AppState>, model: web::Json<RegisterModel>) -> impl Responder {
+    if let Some(header) = req.headers().get("testing") {
+        if let Some(value) = header.to_str().ok() {
+            return HttpResponse::Ok().body(value.to_owned());
+        }
+    }
+
     HttpResponse::Ok().body("Hello world")
 }
 
@@ -285,10 +435,9 @@ async fn get_story_ranking() -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-
-    let mut addr_port = match std::env::var("BIND_ADDR_PORT") {
+    let addr_port = match std::env::var("BIND_ADDR_PORT") {
         Ok(bind) => bind.to_socket_addrs().unwrap().next().unwrap(),
-        Err(e) => {
+        Err(_) => {
             println!("No BIND_ADDR_PORT environment variable, defaulting to localhost:8000");
             String::from("127.0.0.1:8000").to_socket_addrs().unwrap().next().unwrap()
         }
@@ -331,6 +480,8 @@ async fn main() -> std::io::Result<()> {
         let my_app_state = AppState { pool, hash_key };
 
         let auth = web::scope("/auth")
+            .service(register)
+            .service(sign_in)
             .service(sign_out)
             .service(sign_in_refresh)
             .service(change_password);
@@ -351,8 +502,6 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .data(my_app_state.clone())
             .service(index)
-            .service(sign_in)
-            .service(register)
             .service(api)
     }).bind(addr_port)?
         .run()
