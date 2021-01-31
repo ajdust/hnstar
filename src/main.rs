@@ -9,6 +9,7 @@ use ring::{rand, signature};
 use std::net::ToSocketAddrs;
 use r2d2::PooledConnection;
 use r2d2_postgres::postgres::Transaction;
+use validator::{Validate};
 
 type PgConn = PooledConnection<PostgresConnectionManager<NoTls>>;
 type PgPool = r2d2::Pool<PostgresConnectionManager<NoTls>>;
@@ -72,6 +73,13 @@ struct AuthenticatedConnection {
 
 #[derive(Serialize)]
 struct TokenExpiry { token: String, expires: String }
+
+#[derive(Serialize, Deserialize, Validate)]
+struct UserProfile {
+    name: String,
+    #[validate(email)]
+    email: String,
+}
 
 enum WebError {
     R2D2(r2d2::Error),
@@ -341,6 +349,33 @@ impl SignInModel {
     }
 }
 
+impl UserProfile {
+    fn is_valid(&self) -> Option<WebError> {
+        if self.email.chars().count() > 200 {
+            return Some(WebError::Invalid(String::from("Email address must be shorter than 200 characters")));
+        } else if self.email.chars().count() == 0 {
+            return Some(WebError::Invalid(String::from("Email address must be present")));
+        } else if self.name.chars().count() == 0 {
+            return Some(WebError::Invalid(String::from("Name must be present")));
+        } else if self.name.chars().count() > 200 {
+            return Some(WebError::Invalid(String::from("Name must be shorter than 200 characters")));
+        } else if let Err(val_err) = self.validate() {
+            return Some(WebError::Invalid(String::from(format!("{}", val_err))));
+        }
+
+        None
+    }
+
+    fn update_profile(&self, txn: &mut Transaction, user_id: i32) -> Result<(), WebError> {
+        let update_sql = "\
+            update hnstar.user_main set email = $2, name = $3\
+            where user_main_id = $1";
+
+        txn.execute(update_sql, &[&user_id, &self.email, &self.name])?;
+        Ok(())
+    }
+}
+
 impl AppState {
     fn conn(&self) -> Result<PgConn, WebError> {
         Ok(self.pool.clone().get()?)
@@ -418,13 +453,21 @@ async fn change_password(req: HttpRequest, data: web::Data<AppState>, model: web
 }
 
 #[post("/change_email")]
-async fn change_email() -> impl Responder {
-    HttpResponse::Ok().body("Hello world")
-}
+async fn change_profile(req: HttpRequest, data: web::Data<AppState>, model: web::Json<UserProfile>) -> impl Responder {
+    match data.authenticate(&req)
+        .and_then(|mut auth| {
+            if let Some(err) = model.is_valid() {
+                return Err(err);
+            }
 
-#[post("/change_name")]
-async fn change_name() -> impl Responder {
-    HttpResponse::Ok().body("Hello world")
+            let mut txn = auth.conn.transaction()?;
+            model.update_profile(&mut txn, auth.user.user_id)?;
+            txn.commit()?;
+            Ok("")
+        }) {
+        Ok(json) => HttpResponse::Ok().body(json),
+        Err(err) => err.to_response()
+    }
 }
 
 #[post("/story_rankings")]
@@ -488,11 +531,8 @@ async fn main() -> std::io::Result<()> {
             .service(sign_in)
             .service(sign_out)
             .service(sign_in_refresh)
-            .service(change_password);
-
-        let profile = web::scope("/profile")
-            .service(change_email)
-            .service(change_name);
+            .service(change_password)
+            .service(change_profile);
 
         let ranks = web::scope("/ranks")
             .service(set_story_ranking)
@@ -500,7 +540,6 @@ async fn main() -> std::io::Result<()> {
 
         let api = web::scope("/api")
             .service(auth)
-            .service(profile)
             .service(ranks);
 
         App::new()
