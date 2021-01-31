@@ -8,21 +8,28 @@ use base64::DecodeError;
 use ring::{rand, signature};
 use std::net::ToSocketAddrs;
 use r2d2::PooledConnection;
-use std::error::Error;
 
-#[get("/")]
-async fn index() -> impl Responder {
-    HttpResponse::Ok().body("Hello world")
+type PgConn = PooledConnection<PostgresConnectionManager<NoTls>>;
+type PgPool = r2d2::Pool<PostgresConnectionManager<NoTls>>;
+
+fn gen_session_token() -> String {
+    // Generate random session token
+    let mut v: [u8; 64] = [0; 64];
+    let sr = rand::SystemRandom::new();
+    use rand::SecureRandom;
+    sr.fill(&mut v).unwrap();
+    let token = base64::encode(&v);
+    token
 }
 
 #[derive(Clone)]
 struct AppState {
-    pool: r2d2::Pool<PostgresConnectionManager<NoTls>>,
+    pool: PgPool,
     hash_key: String,
 }
 
 #[derive(Deserialize)]
-struct RegisterModel {
+struct UsernamePasswordModel {
     username: String,
     password: String,
 }
@@ -40,8 +47,14 @@ struct JWK
 struct SignInModel {
     username: String,
     password: String,
+    timestamp: String,
     public_key: JWK,
     signature: String,
+}
+
+#[derive(Deserialize)]
+struct SignInResponseModel {
+    token: String
 }
 
 #[derive(Deserialize)]
@@ -50,6 +63,14 @@ struct SignatureAuthorizationModel {
     timestamp: String,
     signature: String,
 }
+
+struct AuthenticatedUser {
+    user_id: i32,
+    token: String,
+}
+
+#[derive(Serialize)]
+struct TokenExpiry { token: String, expires: String }
 
 enum WebError {
     R2D2(r2d2::Error),
@@ -101,299 +122,77 @@ impl fmt::Debug for WebError {
     }
 }
 
-fn try_register(data: &web::Data<AppState>, model: &web::Json<RegisterModel>) -> Result<HttpResponse, WebError> {
-    if model.password.chars().count() > 100 {
-        return Ok(HttpResponse::BadRequest().body(format!("Given password is too long")));
-    } else if model.password.chars().count() < 10 {
-        return Ok(HttpResponse::BadRequest().body(format!("Given password is too short")));
-    } else if model.username.chars().count() < 3 {
-        return Ok(HttpResponse::BadRequest().body(format!("Given username is too short")));
-    } else if model.username.chars().count() > 30 {
-        return Ok(HttpResponse::BadRequest().body(format!("Given username is too short")));
-    }
-
-    let pool = data.pool.clone();
-
-    let taken = {
-        let mut client = pool.get()?;
-        client
-            .query_opt("select 1 from hnstar.user_auth au where au.username = $1", &[&model.username])?
-            .map_or(false, |_| true)
-    };
-
-    if taken {
-        return Ok(HttpResponse::BadRequest().body(format!("Given username is taken")));
-    }
-
-    let mut hasher = Hasher::default();
-    let result = hasher
-        .with_password(&model.password)
-        .with_secret_key(&data.hash_key);
-    let hash = result.hash()?;
-
-    let user_sql = "\
-            insert into hnstar.user_main (status)
-            values ($1)
-            returning user_main_id";
-
-    let auth_sql = "\
-            insert into hnstar.user_auth (user_main_id, username, hash)
-            values ($1, $2, $3)";
-
-    let mut client = pool.get()?;
-    let mut txn = client.transaction()?;
-    let id: i32 = txn.query_one(user_sql, &[&1])?.get(0); // TODO: use an enum and include more information
-    txn.execute(auth_sql, &[&id, &model.username, &hash])?;
-    txn.commit()?;
-    Ok(HttpResponse::Ok().body(""))
-}
-
-#[post("/register")]
-async fn register(data: web::Data<AppState>, model: web::Json<RegisterModel>) -> impl Responder {
-    match try_register(&data, &model) {
-        Ok(result) => {
-            result
-        }
-        Err(error) => {
-            HttpResponse::BadRequest().body(format!("Something went wrong: {:?}", error))
+impl WebError {
+    fn to_response(&self) -> HttpResponse {
+        match self {
+            WebError::Invalid(err) => HttpResponse::BadRequest().body(err),
+            WebError::Unauthorized(err) => HttpResponse::Unauthorized().body(err),
+            err => HttpResponse::InternalServerError().body(format!("{:?}", err))
         }
     }
 }
 
-#[derive(Serialize)]
-struct TokenExpiry { token: String, expires: String }
+fn verify(jwk_public_key: &JWK, signature: &String, signature_message: &String) -> bool {
+    let signature_bytes =
+        if let Some(b) = base64::decode(&signature).ok() { b } else { return false; };
 
-fn try_sign_in(data: &web::Data<AppState>, model: &web::Json<SignInModel>) -> Result<HttpResponse, WebError> {
-    if model.password.chars().count() > 100 ||
-        model.password.chars().count() < 10 ||
-        model.username.chars().count() < 3 ||
-        model.username.chars().count() > 30 {
-        return Ok(HttpResponse::Unauthorized().body("Invalid credentials"));
-    }
+    let signature_message_bytes = signature_message.clone().into_bytes();
+    let n =
+        if let Some(b) = base64::decode_config(&jwk_public_key.n, base64::URL_SAFE).ok() { b } else { return false; };
+    let e =
+        if let Some(b) = base64::decode_config(&jwk_public_key.e, base64::URL_SAFE).ok() { b } else { return false; };
+    let pk = signature::RsaPublicKeyComponents { n, e };
 
-    let get_hash_sql = "\
-        select au.hash, au.user_main_id from hnstar.user_auth au where au.username = $1
-    ";
+    let alg = &signature::RSA_PKCS1_2048_8192_SHA512;
+    let res = pk.verify(alg, &signature_message_bytes, &signature_bytes);
+    res.is_ok()
+}
 
-    let pool = data.pool.clone();
-    let mut client = pool.get()?;
-    let auth = client.query_opt(get_hash_sql, &[&model.username])?;
-    if let Some(existing) = auth {
-        let hash: String = existing.get(0);
-        let uid: i32 = existing.get(1);
-
-        // verify password hash matches
-        let mut verifier = Verifier::default();
-        let is_valid = verifier
-            .with_hash(hash)
-            .with_password(&model.password)
-            .with_secret_key(&data.hash_key)
-            .verify()?;
-        if !is_valid {
-            return Ok(HttpResponse::Unauthorized().body("Bad credentials"));
-        }
-
-        // Verify RSA public key JWK given is valid
-        let sig_message = format!("{}{}", &model.username, &model.password);
-        let signature_message_bytes = sig_message.into_bytes();
-        let signature_bytes = base64::decode(&model.signature)?;
-        let n = base64::decode_config(&model.public_key.n, base64::URL_SAFE)?;
-        let e = base64::decode_config(&model.public_key.e, base64::URL_SAFE)?;
-        let pub_key = signature::RsaPublicKeyComponents { n, e };
-        let alg = &signature::RSA_PKCS1_2048_8192_SHA512;
-        let res = pub_key.verify(alg, &signature_message_bytes, &signature_bytes);
-        if !res.is_ok() {
-            return Ok(HttpResponse::Unauthorized().body("Invalid signature"));
-        }
-
-        // Generate random session token
-        let mut v: [u8; 64] = [0; 64];
-        let sr = rand::SystemRandom::new();
-        use rand::SecureRandom;
-        sr.fill(&mut v).unwrap();
-        let token = base64::encode(&v);
-
-        // Insert the random session token in the database
-        let insert_token_sql = "\
-            insert into hnstar.user_session (user_main_id, token, public_key, expires)
-            values ($1, $2, $3, $4)
-        ";
-        let mut txn = client.transaction()?;
-        let expires = Utc::now() + Duration::days(30);
-        let stored_public_key = serde_json::to_string(&model.public_key)?;
-        txn.execute(insert_token_sql, &[&uid, &token, &stored_public_key, &expires.naive_utc()])?;
-        txn.commit()?;
-
-        let response = serde_json::to_string(&TokenExpiry { token, expires: expires.format("%+").to_string() })?;
-        Ok(HttpResponse::Ok().body(response))
+fn is_recent_datetime(dt_str: &String, duration: Duration) -> bool {
+    if let Some(dt) = chrono::DateTime::parse_from_str(&dt_str, "yyyy-MM-ddTHH-mm-ss").ok() {
+        let ndt = dt.naive_utc();
+        let now = chrono::Utc::now().naive_utc();
+        ndt < now - duration || ndt > now + duration
     } else {
-        Ok(HttpResponse::Unauthorized().body("Invalid credentials"))
+        false
     }
 }
 
-#[post("/sign_in")]
-async fn sign_in(data: web::Data<AppState>, model: web::Json<SignInModel>) -> impl Responder {
-    match try_sign_in(&data, &model) {
-        Ok(result) => {
-            result
-        }
-        Err(error) => {
-            HttpResponse::BadRequest().body(format!("Something went wrong: {:?}", error))
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct AuthenticationModel {
-    token: String,
-    timestamp: String,
-    signature: String,
-}
-
-#[post("/sign_out")]
-async fn sign_out(data: web::Data<AppState>, model: web::Json<AuthenticationModel>) -> impl Responder {
-    let pool = data.pool.clone();
-    match pool.get() {
-        Ok(mut client) => {
-            match client.execute("update user_session set expires = now(), public_key = '' where token = $1", &[&model.token]) {
-                Ok(_) => HttpResponse::Ok().body(""),
-                Err(e) => HttpResponse::InternalServerError().body(format!("{:?}", e))
-            }
-        }
-        Err(e) => {
-            HttpResponse::InternalServerError().body(format!("{:?}", e))
-        }
-    }
-}
-
-fn try_authenticate(conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>, model: &web::Json<AuthenticationModel>) -> Result<i32, WebError> {
-    if let Ok(ts) = chrono::NaiveDateTime::parse_from_str(&model.timestamp, "%+") {
-        if ts < ts + Duration::minutes(-10) {
-            return Err(WebError::Invalid(String::from("Timestamp is not current")));
-        }
-    }
-
-    let pk_sql = "select public_key, user_main_id from user_session where token = $1";
-    if let Some(pk_row) = conn.query_opt(pk_sql, &[&model.token])? {
-        // TODO: dedup this
-        let pk: String = pk_row.get(0);
-        let signature_message = format!("{}{}", model.timestamp, model.token).into_bytes();
-        let signature_bytes = base64::decode(&model.signature)?;
-        let jwk: JWK = serde_json::from_str(&pk)?;
-        let n = base64::decode_config(&jwk.n, base64::URL_SAFE)?;
-        let e = base64::decode_config(&jwk.e, base64::URL_SAFE)?;
-        let pub_key = signature::RsaPublicKeyComponents { n, e };
-        let alg = &signature::RSA_PKCS1_2048_8192_SHA512;
-        let res = pub_key.verify(alg, &signature_message, &signature_bytes);
-        if !res.is_ok() {
-            return Err(WebError::Invalid(String::from("Invalid signature")));
-        }
-
-        let user_id: i32 = pk_row.get(1);
-        return Ok(user_id);
-    }
-
-    Err(WebError::Invalid(String::from("Could not find token")))
-}
-
-fn try_refresh(conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>, model: &web::Json<AuthenticationModel>, user_id: i32) -> Result<String, WebError> {
-    let remove_session_sql = "/\
-            update user_session set
-                public_key = '',
-                expires = if expires < now() then expires else now() end if
-            where token = $1
-            returning public_key
-        ";
-    let new_session_sql = "/
-            insert into user_session (user_main_id, public_key, token, expires)
-            values ($1, $2, $3, $4)
-        ";
-
-    let mut txn = conn.transaction()?;
-    let pk_maybe = txn.query_one(remove_session_sql, &[&model.token])?;
-    let pk: String = pk_maybe.get(0);
-
-    // new token generated, TODO: dedup this code
-    let mut v: [u8; 64] = [0; 64];
-    let sr = rand::SystemRandom::new();
-    use rand::SecureRandom;
-    sr.fill(&mut v).unwrap();
-    let token = base64::encode(&v);
-    let expires = Utc::now() + Duration::days(30);
-    txn.execute(new_session_sql, &[&user_id, &pk, &token, &expires.naive_utc()])?;
-    txn.commit()?;
-
-    let result = serde_json::to_string(&TokenExpiry { token, expires: expires.format("%+").to_string() })?;
-    Ok(result)
-}
-
-#[post("/sign_in_refresh")]
-async fn sign_in_refresh(data: web::Data<AppState>, model: web::Json<AuthenticationModel>) -> impl Responder {
-    let pool = data.pool.clone();
-    let mut conn = match pool.get() {
-        Ok(conn) => conn,
-        Err(e) => { return HttpResponse::InternalServerError().body(format!("{:?}", e)); }
-    };
-
-    match try_authenticate(&mut conn, &model)
-        .and_then(|uid| try_refresh(&mut conn, &model, uid)) {
-        Ok(json) => HttpResponse::Ok().body(json),
-        Err(WebError::Invalid(s)) => HttpResponse::BadRequest().body(s),
-        Err(e) => HttpResponse::InternalServerError().body(format!("{:?}", e))
-    }
-}
-
-fn get_conn(data: web::Data<AppState>) -> Result<PooledConnection<PostgresConnectionManager<NoTls>>, WebError> {
-    let pool = data.pool.clone();
-    Ok(pool.get()?)
-}
-
-fn try_a(req: HttpRequest, data: web::Data<AppState>) -> Result<i32, WebError> {
-    // Get the pool
-    let mut conn = get_conn(data)?;
-
+fn try_authenticate(conn: &mut PgConn, req: &HttpRequest) -> Result<AuthenticatedUser, WebError> {
     // Get the header out of the request
     let authorization_header = req.headers().get("Authorization")
         .and_then(|h| h.to_str().ok())
         .ok_or(WebError::Unauthorized(String::from("Authorization header missing")))?;
 
-    // Parse the header
+    // Get the header
     let b64_token = if !authorization_header.starts_with("Signature ") {
         Err(WebError::Unauthorized(String::from("Invalid Authorization header")))
     } else {
         Ok(&authorization_header[10..])
     }?;
 
+    // Parse the header
     let signature_model_json = base64::decode(b64_token)
         .map(|v| String::from_utf8(v))?
         .map_err(|e| WebError::Unauthorized(String::from(e.to_string())))?;
-
     let model: SignatureAuthorizationModel = serde_json::from_str(&signature_model_json)?;
 
     // Verify the timestamp is up to date
-    let dt = chrono::DateTime::parse_from_str(&model.timestamp, "yyyy-MM-ddTHH-mm-ss")
-        .map_err(|e| WebError::Unauthorized(String::from(e.to_string())))?
-        .naive_utc();
-    let now = chrono::Utc::now().naive_utc();
-    if dt < now - Duration::minutes(10) || dt > now + Duration::minutes(10) {
-        return Err(WebError::Unauthorized(String::from("Authorization timestamp out of range")))
+    if !is_recent_datetime(&model.timestamp, Duration::minutes(10)) {
+        return Err(WebError::Unauthorized(String::from("Authorization timestamp out of range")));
     }
 
     // Get the token from the database
     let pk_sql = "select public_key, user_main_id from user_session where token = $1";
     if let Some(pk_row) = conn.query_opt(pk_sql, &[&model.token])? {
-        let pk: String = pk_row.get(0);
-        let signature_message = format!("{}{}", model.timestamp, model.token).into_bytes();
-        let signature_bytes = base64::decode(&model.signature)?;
-        let jwk: JWK = serde_json::from_str(&pk)?;
-        let n = base64::decode_config(&jwk.n, base64::URL_SAFE)?;
-        let e = base64::decode_config(&jwk.e, base64::URL_SAFE)?;
-        let pub_key = signature::RsaPublicKeyComponents { n, e };
-        let alg = &signature::RSA_PKCS1_2048_8192_SHA512;
-        let res = pub_key.verify(alg, &signature_message, &signature_bytes);
-        if res.is_ok() {
+        let jwk: JWK = serde_json::from_str(pk_row.get(0))?;
+
+        // Verify the signature
+        let verified = verify(&jwk, &model.signature,
+                              &format!("{}{}", model.timestamp, model.token));
+        if !verified {
             let user_id: i32 = pk_row.get(1);
-            Ok(user_id)
+            Ok(AuthenticatedUser { user_id, token: model.token })
         } else {
             Err(WebError::Invalid(String::from("Invalid signature")))
         }
@@ -402,8 +201,186 @@ fn try_a(req: HttpRequest, data: web::Data<AppState>) -> Result<i32, WebError> {
     }
 }
 
+fn try_refresh(conn: &mut PgConn, req: &HttpRequest) -> Result<String, WebError> {
+    let auth_user = try_authenticate(conn, &req)?;
+    let remove_session_sql = "/\
+            update user_session set
+                public_key = '',
+                expires = if expires < now() then expires else now() end if
+            where token = $1
+            returning public_key";
+    let new_session_sql = "/
+            insert into user_session (user_main_id, public_key, token, expires)
+            values ($1, $2, $3, $4)";
+
+    let mut txn = conn.transaction()?;
+    let pk_maybe = txn.query_one(remove_session_sql, &[&auth_user.token])?;
+    let pk: String = pk_maybe.get(0);
+
+    let token = gen_session_token();
+    let expires = Utc::now() + Duration::days(30);
+    txn.execute(new_session_sql, &[&auth_user.user_id, &pk, &token, &expires.naive_utc()])?;
+    txn.commit()?;
+
+    let result = serde_json::to_string(&TokenExpiry { token, expires: expires.format("%+").to_string() })?;
+    Ok(result)
+}
+
+impl UsernamePasswordModel {
+    fn try_register(&self, conn: &mut PgConn, hash_secret: &String) -> Result<i32, WebError> {
+        let model = self;
+        if model.password.chars().count() > 100 {
+            return Err(WebError::Invalid(format!("Given password is too long")));
+        } else if model.password.chars().count() < 10 {
+            return Err(WebError::Invalid(format!("Given password is too short")));
+        } else if model.username.chars().count() < 3 {
+            return Err(WebError::Invalid(format!("Given username is too short")));
+        } else if model.username.chars().count() > 30 {
+            return Err(WebError::Invalid(format!("Given username is too short")));
+        }
+
+        let taken = {
+            conn
+                .query_opt("select 1 from hnstar.user_auth au where au.username = $1", &[&model.username])?
+                .map_or(false, |_| true)
+        };
+
+        if taken {
+            return Err(WebError::Invalid(format!("Given username is taken")));
+        }
+
+        let mut hasher = Hasher::default();
+        let result = hasher
+            .with_password(&model.password)
+            .with_secret_key(hash_secret);
+        let hash = result.hash()?;
+
+        let user_sql = "\
+            insert into hnstar.user_main (status)
+            values ($1)
+            returning user_main_id";
+
+        let auth_sql = "\
+            insert into hnstar.user_auth (user_main_id, username, hash)
+            values ($1, $2, $3)";
+
+        let mut txn = conn.transaction()?;
+        let id: i32 = txn.query_one(user_sql, &[&1])?.get(0); // TODO: add more information to registration
+        txn.execute(auth_sql, &[&id, &model.username, &hash])?;
+        txn.commit()?;
+        Ok(id)
+    }
+}
+
+impl SignInModel {
+    fn try_sign_in(&self, conn: &mut PgConn, hash_secret: &String) -> Result<String, WebError> {
+        let model = self;
+        if model.password.chars().count() > 100 ||
+            model.password.chars().count() < 10 ||
+            model.username.chars().count() < 3 ||
+            model.username.chars().count() > 30 {
+            return Err(WebError::Unauthorized(String::from("Invalid credentials")));
+        }
+
+        // Verify valid public key (RSA JWK)
+        let verified = verify(&model.public_key, &model.signature,
+                              &format!("{}{}", &model.timestamp, &model.username));
+        if !verified {
+            return Err(WebError::Unauthorized(String::from("Invalid signature")));
+        }
+
+        // Find the username is the database
+        let get_hash_sql = "\
+            select au.hash, au.user_main_id from hnstar.user_auth au where au.username = $1";
+
+        let auth = conn.query_opt(get_hash_sql, &[&model.username])?;
+        if let Some(existing) = auth {
+            let hash: String = existing.get(0);
+            let uid: i32 = existing.get(1);
+
+            // Verify password hash matches
+            let mut verifier = Verifier::default();
+            let is_valid = verifier
+                .with_hash(hash)
+                .with_password(&model.password)
+                .with_secret_key(hash_secret)
+                .verify()?;
+            if !is_valid {
+                return Err(WebError::Unauthorized(String::from("Bad credentials")));
+            }
+
+            // Insert a random session token in the database
+            let insert_token_sql = "\
+                insert into hnstar.user_session (user_main_id, token, public_key, expires)
+                values ($1, $2, $3, $4)";
+            let mut txn = conn.transaction()?;
+            let expires = Utc::now() + Duration::days(30);
+            let stored_public_key = serde_json::to_string(&model.public_key)?;
+            let token = gen_session_token();
+            txn.execute(insert_token_sql, &[&uid, &token, &stored_public_key, &expires.naive_utc()])?;
+            txn.commit()?;
+
+            let response = serde_json::to_string(
+                &TokenExpiry { token, expires: expires.format("%+").to_string() })?;
+            Ok(response)
+        } else {
+            Err(WebError::Unauthorized(String::from("Invalid credentials")))
+        }
+    }
+}
+
+impl AppState {
+    fn conn(&self) -> Result<PgConn, WebError> {
+        Ok(self.pool.clone().get()?)
+    }
+}
+
+#[get("/")]
+async fn index() -> impl Responder {
+    HttpResponse::Ok().body("Hello world")
+}
+
+#[post("/register")]
+async fn register(data: web::Data<AppState>, model: web::Json<UsernamePasswordModel>) -> impl Responder {
+    match data.conn()
+        .and_then(|mut c| model.try_register(&mut c, &data.hash_key)) {
+        Ok(uid) => HttpResponse::Ok().body(format!("{}", uid)),
+        Err(error) => error.to_response()
+    }
+}
+
+#[post("/sign_in")]
+async fn sign_in(data: web::Data<AppState>, model: web::Json<SignInModel>) -> impl Responder {
+    match data.conn()
+        .and_then(|mut c| model.try_sign_in(&mut c, &data.hash_key)) {
+        Ok(json) => HttpResponse::Ok().body(json),
+        Err(error) => error.to_response()
+    }
+}
+
+#[post("/sign_out")]
+async fn sign_out(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
+    match data.conn()
+        .and_then(|mut c| try_authenticate(&mut c, &req).map(|uid| (c, uid)))
+        .and_then(|(mut c, auth_user)|
+            c.execute("update user_session set expires = now(), public_key = '' where token = $1", &[&auth_user.token])
+                .map_err(|err| WebError::from(err))) {
+        Ok(_) => HttpResponse::Ok().body(""),
+        Err(error) => error.to_response()
+    }
+}
+
+#[post("/sign_in_refresh")]
+async fn sign_in_refresh(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
+    match data.conn()
+        .and_then(|mut c| try_refresh(&mut c, &req)) {
+        Ok(json) => HttpResponse::Ok().body(json),
+        Err(err) => err.to_response()
+    }
+}
+
 #[post("/change_password")]
-async fn change_password(req: HttpRequest, data: web::Data<AppState>, model: web::Json<RegisterModel>) -> impl Responder {
+async fn change_password(req: HttpRequest, data: web::Data<AppState>, model: web::Json<UsernamePasswordModel>) -> impl Responder {
     if let Some(header) = req.headers().get("testing") {
         if let Some(value) = header.to_str().ok() {
             return HttpResponse::Ok().body(value.to_owned());
