@@ -452,7 +452,7 @@ async fn change_password(req: HttpRequest, data: web::Data<AppState>, model: web
     }
 }
 
-#[post("/change_email")]
+#[post("/change_profile")]
 async fn change_profile(req: HttpRequest, data: web::Data<AppState>, model: web::Json<UserProfile>) -> impl Responder {
     match data.authenticate(&req)
         .and_then(|mut auth| {
