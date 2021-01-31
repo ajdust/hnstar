@@ -8,6 +8,7 @@ use base64::DecodeError;
 use ring::{rand, signature};
 use std::net::ToSocketAddrs;
 use r2d2::PooledConnection;
+use r2d2_postgres::postgres::Transaction;
 
 type PgConn = PooledConnection<PostgresConnectionManager<NoTls>>;
 type PgPool = r2d2::Pool<PostgresConnectionManager<NoTls>>;
@@ -53,11 +54,6 @@ struct SignInModel {
 }
 
 #[derive(Deserialize)]
-struct SignInResponseModel {
-    token: String
-}
-
-#[derive(Deserialize)]
 struct SignatureAuthorizationModel {
     token: String,
     timestamp: String,
@@ -67,6 +63,11 @@ struct SignatureAuthorizationModel {
 struct AuthenticatedUser {
     user_id: i32,
     token: String,
+}
+
+struct AuthenticatedConnection {
+    user: AuthenticatedUser,
+    conn: PgConn,
 }
 
 #[derive(Serialize)]
@@ -183,7 +184,7 @@ fn try_authenticate(conn: &mut PgConn, req: &HttpRequest) -> Result<Authenticate
     }
 
     // Get the token from the database
-    let pk_sql = "select public_key, user_main_id from user_session where token = $1";
+    let pk_sql = "select public_key, user_main_id from user_session where token = $1 and expires > now()";
     if let Some(pk_row) = conn.query_opt(pk_sql, &[&model.token])? {
         let jwk: JWK = serde_json::from_str(pk_row.get(0))?;
 
@@ -227,16 +228,38 @@ fn try_refresh(conn: &mut PgConn, req: &HttpRequest) -> Result<String, WebError>
 }
 
 impl UsernamePasswordModel {
-    fn try_register(&self, conn: &mut PgConn, hash_secret: &String) -> Result<i32, WebError> {
+    fn validate(&self) -> Option<WebError> {
         let model = self;
         if model.password.chars().count() > 100 {
-            return Err(WebError::Invalid(format!("Given password is too long")));
+            return Some(WebError::Invalid(format!("Given password is too long")));
         } else if model.password.chars().count() < 10 {
-            return Err(WebError::Invalid(format!("Given password is too short")));
+            return Some(WebError::Invalid(format!("Given password is too short")));
         } else if model.username.chars().count() < 3 {
-            return Err(WebError::Invalid(format!("Given username is too short")));
+            return Some(WebError::Invalid(format!("Given username is too short")));
         } else if model.username.chars().count() > 30 {
-            return Err(WebError::Invalid(format!("Given username is too short")));
+            return Some(WebError::Invalid(format!("Given username is too short")));
+        }
+        None
+    }
+
+    fn insert_password(&self, txn: &mut Transaction, user_id: i32, hash_secret: &String) -> Result<(), WebError> {
+        let mut hasher = Hasher::default();
+        let result = hasher
+            .with_password(&self.password)
+            .with_secret_key(hash_secret);
+        let hash = result.hash()?;
+        let auth_sql = "\
+            insert into hnstar.user_auth (user_main_id, username, hash)
+            values ($1, $2, $3)";
+
+        txn.execute(auth_sql, &[&user_id, &self.username, &hash])?;
+        Ok(())
+    }
+
+    fn try_register(&self, conn: &mut PgConn, hash_secret: &String) -> Result<i32, WebError> {
+        let model = self;
+        if let Some(err) = self.validate() {
+            return Err(err);
         }
 
         let taken = {
@@ -249,24 +272,13 @@ impl UsernamePasswordModel {
             return Err(WebError::Invalid(format!("Given username is taken")));
         }
 
-        let mut hasher = Hasher::default();
-        let result = hasher
-            .with_password(&model.password)
-            .with_secret_key(hash_secret);
-        let hash = result.hash()?;
-
+        let mut txn = conn.transaction()?;
         let user_sql = "\
             insert into hnstar.user_main (status)
             values ($1)
             returning user_main_id";
-
-        let auth_sql = "\
-            insert into hnstar.user_auth (user_main_id, username, hash)
-            values ($1, $2, $3)";
-
-        let mut txn = conn.transaction()?;
         let id: i32 = txn.query_one(user_sql, &[&1])?.get(0); // TODO: add more information to registration
-        txn.execute(auth_sql, &[&id, &model.username, &hash])?;
+        model.insert_password(&mut txn, id, hash_secret)?;
         txn.commit()?;
         Ok(id)
     }
@@ -333,6 +345,15 @@ impl AppState {
     fn conn(&self) -> Result<PgConn, WebError> {
         Ok(self.pool.clone().get()?)
     }
+
+    fn authenticate(&self, req: &HttpRequest) -> Result<AuthenticatedConnection, WebError> {
+        self.conn()
+            .and_then(|mut c| try_authenticate(&mut c, &req)
+                .map(|u| AuthenticatedConnection {
+                    user: u,
+                    conn: c,
+                }))
+    }
 }
 
 #[get("/")]
@@ -360,10 +381,9 @@ async fn sign_in(data: web::Data<AppState>, model: web::Json<SignInModel>) -> im
 
 #[post("/sign_out")]
 async fn sign_out(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
-    match data.conn()
-        .and_then(|mut c| try_authenticate(&mut c, &req).map(|uid| (c, uid)))
-        .and_then(|(mut c, auth_user)|
-            c.execute("update user_session set expires = now(), public_key = '' where token = $1", &[&auth_user.token])
+    match data.authenticate(&req)
+        .and_then(|mut auth|
+            auth.conn.execute("update user_session set expires = now(), public_key = '' where token = $1", &[&auth.user.token])
                 .map_err(|err| WebError::from(err))) {
         Ok(_) => HttpResponse::Ok().body(""),
         Err(error) => error.to_response()
@@ -381,13 +401,20 @@ async fn sign_in_refresh(req: HttpRequest, data: web::Data<AppState>) -> impl Re
 
 #[post("/change_password")]
 async fn change_password(req: HttpRequest, data: web::Data<AppState>, model: web::Json<UsernamePasswordModel>) -> impl Responder {
-    if let Some(header) = req.headers().get("testing") {
-        if let Some(value) = header.to_str().ok() {
-            return HttpResponse::Ok().body(value.to_owned());
-        }
-    }
+    match data.authenticate(&req)
+        .and_then(|mut auth| {
+            if let Some(err) = model.validate() {
+                return Err(err);
+            }
 
-    HttpResponse::Ok().body("Hello world")
+            let mut txn = auth.conn.transaction()?;
+            model.insert_password(&mut txn, auth.user.user_id, &data.hash_key)?;
+            txn.commit()?;
+            Ok("")
+        }) {
+        Ok(json) => HttpResponse::Ok().body(json),
+        Err(err) => err.to_response()
+    }
 }
 
 #[post("/change_email")]
