@@ -10,6 +10,7 @@ use std::net::ToSocketAddrs;
 use r2d2::PooledConnection;
 use r2d2_postgres::postgres::Transaction;
 use validator::{Validate};
+use r2d2_postgres::postgres::types::ToSql;
 
 type PgConn = PooledConnection<PostgresConnectionManager<NoTls>>;
 type PgPool = r2d2::Pool<PostgresConnectionManager<NoTls>>;
@@ -475,9 +476,200 @@ async fn set_story_ranking() -> impl Responder {
     HttpResponse::Ok().body("Hello world")
 }
 
+#[derive(Deserialize)]
+struct RankingNumberFilter {
+    gt: Option<i64>,
+    lt: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct StoryRankingSort {
+    sort: String,
+    asc: bool,
+}
+
+#[derive(Deserialize)]
+struct PgRegex {
+    regex: String,
+    not: bool,
+}
+
+#[derive(Deserialize)]
+struct StoryRankingFilter {
+    timestamp: Option<RankingNumberFilter>,
+    page_size: Option<i32>,
+    page_number: Option<i32>,
+    title: Option<PgRegex>,
+    url: Option<PgRegex>,
+    score: Option<RankingNumberFilter>,
+    z_score: Option<RankingNumberFilter>,
+    status: Option<i32>,
+    // specific status
+    flags: Option<i32>,
+    //* exact
+    stars: Option<RankingNumberFilter>,
+    comment: Option<PgRegex>,
+    // regex
+    sort: Option<Vec<StoryRankingSort>>,
+}
+
+#[derive(Serialize)]
+struct GetStory {
+    story_id: i64,
+    score: i32,
+    timestamp: i64,
+    title: String,
+    url: String,
+    status: i32,
+    descendants: i32,
+    stars: i32,
+    flags: i32,
+    upvote: bool,
+}
+
 #[get("/story_rankings")]
-async fn get_story_ranking() -> impl Responder {
-    HttpResponse::Ok().body("Hello world")
+async fn get_story_ranking(req: HttpRequest, model: web::Json<StoryRankingFilter>) -> impl Responder {
+    let default = RankingNumberFilter {
+        gt: Some((chrono::Utc::now() + Duration::days(-10)).timestamp()),
+        lt: None,
+    };
+    let ts = model.timestamp.as_ref()
+        .map_or(&default, |v| v);
+
+    if ts.gt.is_none() && ts.lt.is_none() {
+        return HttpResponse::BadRequest().body("Must specify timestamp filter");
+    }
+
+    // from
+    let from_clause = String::from("\
+        with stats as (
+            select avg(score) mean_score, stddev(score) stddev_score
+            from hnstar.story
+            where timestamp > $1
+        )
+        select s.story_id, s.score, s.timestamp, s.title, s.url, s.status, s.descendants, r.stars, r.flags, r.upvote \
+        from hnstar.story s, stats t
+        left join hnstar.story_user_rank r on r.story_id = s.story_id
+    ");
+
+    // where
+    let mut parameters: Vec<&(dyn ToSql + Sync)> = vec![];
+    let mut where_query: Vec<String> = vec![];
+
+    if let Some(gt_ts) = &ts.gt {
+        parameters.push(gt_ts);
+        where_query.push(format!("timestamp > ${}", parameters.len()));
+    }
+
+    if let Some(lt_ts) = &ts.lt {
+        parameters.push(lt_ts);
+        where_query.push(format!("timestamp < ${}", parameters.len()));
+    }
+
+    if let Some(title) = &model.title {
+        if title.not {
+            parameters.push(&title.regex);
+            where_query.push(format!("title !~* ${}", parameters.len()));
+        } else {
+            parameters.push(&title.regex);
+            where_query.push(format!("title ~* ${}", parameters.len()));
+        }
+    }
+
+    if let Some(comment) = &model.comment {
+        if comment.not {
+            parameters.push(&comment.regex);
+            where_query.push(format!("comment !~* ${}", parameters.len()));
+        } else {
+            parameters.push(&comment.regex);
+            where_query.push(format!("comment ~* ${}", parameters.len()));
+        }
+    }
+
+    if let Some(url) = &model.url {
+        if url.not {
+            parameters.push(&url.regex);
+            where_query.push(format!("url !~* ${}", parameters.len()));
+        } else {
+            parameters.push(&url.regex);
+            where_query.push(format!("url ~* ${}", parameters.len()));
+        }
+    }
+
+    if let Some(score) = &model.score {
+        if let Some(gt_score) = &score.gt {
+            parameters.push(gt_score);
+            where_query.push(format!("score > ${}", parameters.len()));
+        }
+
+        if let Some(lt_score) = &score.lt {
+            parameters.push(lt_score);
+            where_query.push(format!("score < ${}", parameters.len()));
+        }
+    }
+
+    // z_score with mean and stddev over timestamp range
+    if let Some(z_score) = &model.z_score {
+        if let Some(gt_z_score) = &z_score.gt {
+            parameters.push(gt_z_score);
+            where_query.push(format!("((s.score - t.mean_score) / t.stddev_score) >= ${}", parameters.len()));
+        }
+
+        if let Some(lt_z_score) = &z_score.lt {
+            parameters.push(lt_z_score);
+            where_query.push(format!("((s.score - t.mean_score) / t.stddev_score) >= ${}", parameters.len()));
+        }
+    }
+
+    if let Some(stars) = &model.stars {
+        if let Some(gt_stars) = &stars.gt {
+            parameters.push(gt_stars);
+            where_query.push(format!("stars > ${}", parameters.len()));
+        }
+
+        if let Some(lt_stars) = &stars.lt {
+            parameters.push(lt_stars);
+            where_query.push(format!("stars < ${}", parameters.len()));
+        }
+    }
+
+    if let Some(status) = &model.status {
+        parameters.push(status);
+        where_query.push(format!("status = ${}", parameters.len()));
+    }
+
+    if let Some(flags) = &model.flags {
+        parameters.push(&flags);
+        where_query.push(format!("flags = ${}", parameters.len()));
+    }
+
+    let where_clause = format!("where {} ", where_query.join(" and "));
+
+    // sorting
+    let mut sort_query : Vec<String> = vec![];
+    let default = vec![StoryRankingSort {
+        sort: String::from("timestamp"),
+        asc: false,
+    }];
+    let sorts = model.sort.as_ref().map_or(&default, |v| v);
+    for sort in sorts.iter() {
+        if sort.asc {
+            sort_query.push(format!("{} asc", sort.sort));
+        } else {
+            sort_query.push(format!("{} desc", sort.sort));
+        }
+    }
+
+    let page_size = model.page_size.map_or(100, |v| v);
+    sort_query.push(String::from(format!("limit {}", page_size)));
+    let page_number = model.page_number.map_or(0, |v| v);
+    sort_query.push(String::from(format!("offset {}", page_number * page_size)));
+
+    let sort_clause = format!("order by {} ", sort_query.join(" "));
+
+    // TODO: execute postgres query and return GetStory
+    let query = format!("{} \n{} \n{}", from_clause, where_clause, sort_clause);
+    HttpResponse::Ok().body(query)
 }
 
 #[actix_web::main]
