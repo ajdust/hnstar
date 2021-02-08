@@ -170,16 +170,20 @@ fn verify(jwk_public_key: &JWK, message_signature: &String, message: &String) ->
     res.is_ok()
 }
 
-fn is_recent_datetime(dt_str: &String, duration: Duration) -> bool {
+#[cfg(feature = "debug")]
+fn is_recent_datetime(_dt_str: &String, _duration: Duration) -> bool {
     true
-    // TODO: enable when basic testing is done
-    // if let Some(dt) = chrono::DateTime::parse_from_str(&dt_str, "yyyy-MM-ddTHH-mm-ss").ok() {
-    //     let ndt = dt.naive_utc();
-    //     let now = chrono::Utc::now().naive_utc();
-    //     ndt < now - duration || ndt > now + duration
-    // } else {
-    //     false
-    // }
+}
+
+#[cfg(not(feature = "debug"))]
+fn is_recent_datetime(dt_str: &String, duration: Duration) -> bool {
+    if let Some(dt) = chrono::DateTime::parse_from_str(&dt_str, "yyyy-MM-ddTHH-mm-ss").ok() {
+        let ndt = dt.naive_utc();
+        let now = chrono::Utc::now().naive_utc();
+        ndt < now - duration || ndt > now + duration
+    } else {
+        false
+    }
 }
 
 fn try_authenticate(conn: &mut PgConn, req: &HttpRequest) -> Result<AuthenticatedUser, WebError> {
@@ -607,7 +611,7 @@ struct QueryParameters {
     parameters: Vec<SqlParameter>,
 }
 
-fn get_query<'a>(model: web::Json<StoryRankingFilter>) -> Result<QueryParameters, WebError> {
+fn get_query<'a>(model: web::Json<StoryRankingFilter>, user_id: i32) -> Result<QueryParameters, WebError> {
     let default = BigIntFilter {
         gt: Some((chrono::Utc::now() + Duration::days(-10)).timestamp()),
         lt: None,
@@ -620,23 +624,23 @@ fn get_query<'a>(model: web::Json<StoryRankingFilter>) -> Result<QueryParameters
     }
 
     // from
-    let from_clause = String::from("\
+    let from_clause = String::from("
         with stats as (
             select avg(score) mean_score, stddev(score) stddev_score
             from hnstar.story
-            where timestamp > $1
+            where timestamp > $2
         ), scored_stories as (
             select * from hnstar.story, stats
         )
         select s.story_id, s.score, s.timestamp, s.title, s.url, s.status, s.descendants, r.stars, r.flags
         from scored_stories s
-        left join hnstar.story_user_rank r on r.story_id = s.story_id
+        left join hnstar.story_user_rank r
+            on r.story_id = s.story_id and r.user_main_id = $1
     ");
-    // TODO: add mandatory user id constraint
 
     // where
-    let mut parameters: Vec<SqlParameter> = vec![];
-    let mut where_query: Vec<String> = vec![];
+    let mut parameters: Vec<SqlParameter> = vec![SqlParameter::Int(user_id)];
+    let mut where_query: Vec<String> = vec![String::from("")];
 
     if let Some(gt_ts) = ts.gt {
         parameters.push(SqlParameter::from(gt_ts));
@@ -722,6 +726,7 @@ fn get_query<'a>(model: web::Json<StoryRankingFilter>) -> Result<QueryParameters
         where_query.push(format!("flags = ${}", parameters.len()));
     }
 
+    where_query.retain(|v| !v.is_empty());
     let where_clause = format!("where {} ", where_query.join(" and "));
 
     // sorting
@@ -756,7 +761,7 @@ fn get_query<'a>(model: web::Json<StoryRankingFilter>) -> Result<QueryParameters
 async fn get_story_ranking(req: HttpRequest, data: web::Data<AppState>, model: web::Json<StoryRankingFilter>) -> impl Responder {
     match data.authenticate(&req)
         .and_then(|mut auth| {
-            let query = get_query(model)?;
+            let query = get_query(model, auth.user.user_id)?;
             let prep = auth.conn.prepare(&query.query)?;
             let rows: Vec<tokio_postgres::row::Row> = auth.conn.query(
                 &prep,
