@@ -490,9 +490,59 @@ async fn change_profile(req: HttpRequest, data: web::Data<AppState>, model: web:
     }
 }
 
+#[derive(Deserialize)]
+struct SetStory {
+    story_id: i64,
+    stars: Option<i32>,
+    flags: Option<i32>,
+    comment: Option<String>,
+}
+
+impl SetStory {
+    fn is_valid(&self) -> Result<(), String> {
+        let invalid_stars = if let Some(v) = self.stars { v < 0 || v > 10 } else { false };
+        let invalid_flags = if let Some(f) = self.flags { f < 0 } else { false };
+        if self.story_id <= 0 {
+            Err(String::from("Invalid story_id"))
+        } else if invalid_stars {
+            Err(String::from("Invalid star count"))
+        } else if invalid_flags {
+            Err(String::from("Invalid flags"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[post("/story_rankings")]
-async fn set_story_ranking() -> impl Responder {
-    HttpResponse::Ok().body("Hello world")
+async fn set_story_ranking(req: HttpRequest, data: web::Data<AppState>, model: web::Json<Vec<SetStory>>) -> impl Responder {
+    match data.authenticate(&req)
+        .and_then(|mut auth| {
+            let mut txn = auth.conn.transaction()?;
+            for set in model.iter() {
+                if let Err(err) = set.is_valid() {
+                    return Err(WebError::Invalid(err));
+                }
+
+                // TODO: add clause to verify story_id exists
+                let sql = "
+                    insert into hnstar.story_user_rank (user_main_id, story_id, stars, flags, comment, created, updated)
+                    values ($1, $2, coalesce($3, 0), coalesce($4, 0), coalesce($5, ''), now(), now())
+                    on conflict (user_main_id, story_id)
+                    do update set
+                        stars = coalesce($3, hnstar.story_user_rank.stars),
+                        flags = coalesce($4, hnstar.story_user_rank.flags),
+                        comment = coalesce($5, hnstar.story_user_rank.comment),
+                        updated = now()";
+                txn.execute(sql, &[&auth.user.user_id, &set.story_id, &set.stars, &set.flags, &set.comment])?;
+            }
+
+            txn.commit()?;
+            Ok("Done")
+        }) {
+        Ok(json) => HttpResponse::Ok().body(json),
+        Err(err) => err.to_response()
+    }
 }
 
 #[derive(Deserialize, Copy, Clone)]
@@ -752,8 +802,11 @@ fn get_query<'a>(model: web::Json<StoryRankingFilter>, user_id: i32) -> Result<Q
     let sort_clause = format!("order by {} ", sort_query.join(" "));
 
     let query = format!("{} \n{} \n{}", from_clause, where_clause, sort_clause);
-    println!("{}", &query);
-    println!("{:?}", parameters);
+    #[cfg(feature = "debug")]
+        {
+            println!("{}", &query);
+            println!("{:?}", parameters);
+        }
     Ok(QueryParameters { query, parameters })
 }
 
