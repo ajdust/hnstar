@@ -1,4 +1,4 @@
-use actix_web::{get, post, App, HttpResponse, HttpRequest, HttpServer, Responder, web};
+use actix_web::{get, post, App, HttpResponse, HttpRequest, HttpServer, Responder, web, error};
 use r2d2_postgres::{postgres::NoTls, PostgresConnectionManager};
 use serde::{Deserialize, Serialize};
 use argonautica::{Hasher, Verifier};
@@ -142,30 +142,44 @@ impl WebError {
     }
 }
 
-fn verify(jwk_public_key: &JWK, signature: &String, signature_message: &String) -> bool {
+fn verify(jwk_public_key: &JWK, message_signature: &String, message: &String) -> bool {
     let signature_bytes =
-        if let Some(b) = base64::decode(&signature).ok() { b } else { return false; };
+        if let Some(b) = base64::decode(&message_signature).ok() {
+            b
+        } else {
+            return false;
+        };
 
-    let signature_message_bytes = signature_message.clone().into_bytes();
+    let message_bytes = message.clone().into_bytes();
     let n =
-        if let Some(b) = base64::decode_config(&jwk_public_key.n, base64::URL_SAFE).ok() { b } else { return false; };
+        if let Some(b) = base64::decode_config(&jwk_public_key.n, base64::URL_SAFE).ok() {
+            b
+        } else {
+            return false;
+        };
     let e =
-        if let Some(b) = base64::decode_config(&jwk_public_key.e, base64::URL_SAFE).ok() { b } else { return false; };
+        if let Some(b) = base64::decode_config(&jwk_public_key.e, base64::URL_SAFE).ok() {
+            b
+        } else {
+            return false;
+        };
     let pk = signature::RsaPublicKeyComponents { n, e };
 
     let alg = &signature::RSA_PKCS1_2048_8192_SHA512;
-    let res = pk.verify(alg, &signature_message_bytes, &signature_bytes);
+    let res = pk.verify(alg, &message_bytes, &signature_bytes);
     res.is_ok()
 }
 
 fn is_recent_datetime(dt_str: &String, duration: Duration) -> bool {
-    if let Some(dt) = chrono::DateTime::parse_from_str(&dt_str, "yyyy-MM-ddTHH-mm-ss").ok() {
-        let ndt = dt.naive_utc();
-        let now = chrono::Utc::now().naive_utc();
-        ndt < now - duration || ndt > now + duration
-    } else {
-        false
-    }
+    true
+    // TODO: enable when basic testing is done
+    // if let Some(dt) = chrono::DateTime::parse_from_str(&dt_str, "yyyy-MM-ddTHH-mm-ss").ok() {
+    //     let ndt = dt.naive_utc();
+    //     let now = chrono::Utc::now().naive_utc();
+    //     ndt < now - duration || ndt > now + duration
+    // } else {
+    //     false
+    // }
 }
 
 fn try_authenticate(conn: &mut PgConn, req: &HttpRequest) -> Result<AuthenticatedUser, WebError> {
@@ -193,14 +207,14 @@ fn try_authenticate(conn: &mut PgConn, req: &HttpRequest) -> Result<Authenticate
     }
 
     // Get the token from the database
-    let pk_sql = "select public_key, user_main_id from user_session where token = $1 and expires > now()";
+    let pk_sql = "select public_key, user_main_id from hnstar.user_session where token = $1 and expires > now()";
     if let Some(pk_row) = conn.query_opt(pk_sql, &[&model.token])? {
         let jwk: JWK = serde_json::from_str(pk_row.get(0))?;
 
         // Verify the signature
         let verified = verify(&jwk, &model.signature,
                               &format!("{}{}", model.timestamp, model.token));
-        if !verified {
+        if verified {
             let user_id: i32 = pk_row.get(1);
             Ok(AuthenticatedUser { user_id, token: model.token })
         } else {
@@ -299,7 +313,8 @@ impl SignInModel {
         if model.password.chars().count() > 100 ||
             model.password.chars().count() < 10 ||
             model.username.chars().count() < 3 ||
-            model.username.chars().count() > 30 {
+            model.username.chars().count() > 30 ||
+            !is_recent_datetime(&model.timestamp, Duration::minutes(10)) {
             return Err(WebError::Unauthorized(String::from("Invalid credentials")));
         }
 
@@ -476,19 +491,31 @@ async fn set_story_ranking() -> impl Responder {
     HttpResponse::Ok().body("Hello world")
 }
 
-#[derive(Deserialize)]
-struct RankingNumberFilter {
+#[derive(Deserialize, Copy, Clone)]
+struct IntFilter {
+    gt: Option<i32>,
+    lt: Option<i32>,
+}
+
+#[derive(Deserialize, Copy, Clone)]
+struct BigIntFilter {
     gt: Option<i64>,
     lt: Option<i64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Copy, Clone)]
+struct FloatFilter {
+    gt: Option<f64>,
+    lt: Option<f64>,
+}
+
+#[derive(Deserialize, Clone)]
 struct StoryRankingSort {
     sort: String,
     asc: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct PgRegex {
     regex: String,
     not: bool,
@@ -496,24 +523,21 @@ struct PgRegex {
 
 #[derive(Deserialize)]
 struct StoryRankingFilter {
-    timestamp: Option<RankingNumberFilter>,
+    timestamp: Option<BigIntFilter>,
     page_size: Option<i32>,
     page_number: Option<i32>,
     title: Option<PgRegex>,
     url: Option<PgRegex>,
-    score: Option<RankingNumberFilter>,
-    z_score: Option<RankingNumberFilter>,
+    score: Option<IntFilter>,
+    z_score: Option<FloatFilter>,
     status: Option<i32>,
-    // specific status
     flags: Option<i32>,
-    //* exact
-    stars: Option<RankingNumberFilter>,
+    stars: Option<IntFilter>,
     comment: Option<PgRegex>,
-    // regex
     sort: Option<Vec<StoryRankingSort>>,
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
 struct GetStory {
     story_id: i64,
     score: i32,
@@ -522,22 +546,77 @@ struct GetStory {
     url: String,
     status: i32,
     descendants: i32,
-    stars: i32,
-    flags: i32,
-    upvote: bool,
+    stars: Option<i32>,
+    flags: Option<i32>,
 }
 
-#[get("/story_rankings")]
-async fn get_story_ranking(req: HttpRequest, model: web::Json<StoryRankingFilter>) -> impl Responder {
-    let default = RankingNumberFilter {
+impl From<&tokio_postgres::row::Row> for GetStory {
+    fn from(row: &tokio_postgres::row::Row) -> Self {
+        let story_id = row.get(0);
+        let score = row.get(1);
+        let timestamp = row.get(2);
+        let title = row.get(3);
+        let url = row.get(4);
+        let status = row.get(5);
+        let descendants = row.get(6);
+        let stars = row.get(7);
+        let flags = row.get(8);
+        GetStory {
+            story_id,
+            score,
+            timestamp,
+            title,
+            url,
+            status,
+            descendants,
+            stars,
+            flags,
+        }
+    }
+}
+
+#[derive(Debug)]
+enum SqlParameter {
+    Int(i32),
+    BigInt(i64),
+    Float(f64),
+    Varchar(String),
+}
+
+impl From<i64> for SqlParameter { fn from(i: i64) -> Self { SqlParameter::BigInt(i) } }
+
+impl From<i32> for SqlParameter { fn from(i: i32) -> Self { SqlParameter::Int(i) } }
+
+impl From<f64> for SqlParameter { fn from(f: f64) -> Self { SqlParameter::Float(f) } }
+
+impl From<String> for SqlParameter { fn from(s: String) -> Self { SqlParameter::Varchar(s) } }
+
+impl SqlParameter {
+    fn to_dynamic(&self) -> &(dyn ToSql + Sync) {
+        match self {
+            SqlParameter::Int(i) => i as &(dyn ToSql + Sync),
+            SqlParameter::BigInt(i) => i as &(dyn ToSql + Sync),
+            SqlParameter::Float(f) => f as &(dyn ToSql + Sync),
+            SqlParameter::Varchar(v) => v as &(dyn ToSql + Sync),
+        }
+    }
+}
+
+struct QueryParameters {
+    query: String,
+    parameters: Vec<SqlParameter>,
+}
+
+fn get_query<'a>(model: web::Json<StoryRankingFilter>) -> Result<QueryParameters, WebError> {
+    let default = BigIntFilter {
         gt: Some((chrono::Utc::now() + Duration::days(-10)).timestamp()),
         lt: None,
     };
-    let ts = model.timestamp.as_ref()
-        .map_or(&default, |v| v);
+    let ts = model.timestamp
+        .map_or(default, |v| v);
 
     if ts.gt.is_none() && ts.lt.is_none() {
-        return HttpResponse::BadRequest().body("Must specify timestamp filter");
+        return Err(WebError::Invalid(String::from("Must specify timestamp filter")));
     }
 
     // from
@@ -546,107 +625,107 @@ async fn get_story_ranking(req: HttpRequest, model: web::Json<StoryRankingFilter
             select avg(score) mean_score, stddev(score) stddev_score
             from hnstar.story
             where timestamp > $1
+        ), scored_stories as (
+            select * from hnstar.story, stats
         )
-        select s.story_id, s.score, s.timestamp, s.title, s.url, s.status, s.descendants, r.stars, r.flags, r.upvote \
-        from hnstar.story s, stats t
+        select s.story_id, s.score, s.timestamp, s.title, s.url, s.status, s.descendants, r.stars, r.flags
+        from scored_stories s
         left join hnstar.story_user_rank r on r.story_id = s.story_id
     ");
+    // TODO: add mandatory user id constraint
 
     // where
-    let mut parameters: Vec<&(dyn ToSql + Sync)> = vec![];
+    let mut parameters: Vec<SqlParameter> = vec![];
     let mut where_query: Vec<String> = vec![];
 
-    if let Some(gt_ts) = &ts.gt {
-        parameters.push(gt_ts);
+    if let Some(gt_ts) = ts.gt {
+        parameters.push(SqlParameter::from(gt_ts));
         where_query.push(format!("timestamp > ${}", parameters.len()));
     }
 
-    if let Some(lt_ts) = &ts.lt {
-        parameters.push(lt_ts);
+    if let Some(lt_ts) = ts.lt {
+        parameters.push(SqlParameter::from(lt_ts));
         where_query.push(format!("timestamp < ${}", parameters.len()));
     }
 
-    if let Some(title) = &model.title {
+    if let Some(title) = model.title.clone() {
+        parameters.push(SqlParameter::from(title.regex));
         if title.not {
-            parameters.push(&title.regex);
             where_query.push(format!("title !~* ${}", parameters.len()));
         } else {
-            parameters.push(&title.regex);
             where_query.push(format!("title ~* ${}", parameters.len()));
         }
     }
 
-    if let Some(comment) = &model.comment {
+    if let Some(comment) = model.comment.clone() {
+        parameters.push(SqlParameter::from(comment.regex));
         if comment.not {
-            parameters.push(&comment.regex);
             where_query.push(format!("comment !~* ${}", parameters.len()));
         } else {
-            parameters.push(&comment.regex);
             where_query.push(format!("comment ~* ${}", parameters.len()));
         }
     }
 
-    if let Some(url) = &model.url {
+    if let Some(url) = model.url.clone() {
+        parameters.push(SqlParameter::from(url.regex));
         if url.not {
-            parameters.push(&url.regex);
             where_query.push(format!("url !~* ${}", parameters.len()));
         } else {
-            parameters.push(&url.regex);
             where_query.push(format!("url ~* ${}", parameters.len()));
         }
     }
 
     if let Some(score) = &model.score {
-        if let Some(gt_score) = &score.gt {
-            parameters.push(gt_score);
+        if let Some(gt_score) = score.gt {
+            parameters.push(SqlParameter::from(gt_score));
             where_query.push(format!("score > ${}", parameters.len()));
         }
 
-        if let Some(lt_score) = &score.lt {
-            parameters.push(lt_score);
+        if let Some(lt_score) = score.lt {
+            parameters.push(SqlParameter::from(lt_score));
             where_query.push(format!("score < ${}", parameters.len()));
         }
     }
 
     // z_score with mean and stddev over timestamp range
     if let Some(z_score) = &model.z_score {
-        if let Some(gt_z_score) = &z_score.gt {
-            parameters.push(gt_z_score);
-            where_query.push(format!("((s.score - t.mean_score) / t.stddev_score) >= ${}", parameters.len()));
+        if let Some(gt_z_score) = z_score.gt {
+            parameters.push(SqlParameter::from(gt_z_score));
+            where_query.push(format!("((cast(s.score as float) - s.mean_score) / s.stddev_score) >= ${}", parameters.len()));
         }
 
-        if let Some(lt_z_score) = &z_score.lt {
-            parameters.push(lt_z_score);
-            where_query.push(format!("((s.score - t.mean_score) / t.stddev_score) >= ${}", parameters.len()));
+        if let Some(lt_z_score) = z_score.lt {
+            parameters.push(SqlParameter::from(lt_z_score));
+            where_query.push(format!("((cast(s.score as float) - s.mean_score) / s.stddev_score) >= ${}", parameters.len()));
         }
     }
 
-    if let Some(stars) = &model.stars {
-        if let Some(gt_stars) = &stars.gt {
-            parameters.push(gt_stars);
+    if let Some(stars) = model.stars {
+        if let Some(gt_stars) = stars.gt {
+            parameters.push(SqlParameter::from(gt_stars));
             where_query.push(format!("stars > ${}", parameters.len()));
         }
 
-        if let Some(lt_stars) = &stars.lt {
-            parameters.push(lt_stars);
+        if let Some(lt_stars) = stars.lt {
+            parameters.push(SqlParameter::from(lt_stars));
             where_query.push(format!("stars < ${}", parameters.len()));
         }
     }
 
-    if let Some(status) = &model.status {
-        parameters.push(status);
+    if let Some(status) = model.status {
+        parameters.push(SqlParameter::from(status));
         where_query.push(format!("status = ${}", parameters.len()));
     }
 
-    if let Some(flags) = &model.flags {
-        parameters.push(&flags);
+    if let Some(flags) = model.flags {
+        parameters.push(SqlParameter::from(flags));
         where_query.push(format!("flags = ${}", parameters.len()));
     }
 
     let where_clause = format!("where {} ", where_query.join(" and "));
 
     // sorting
-    let mut sort_query : Vec<String> = vec![];
+    let mut sort_query: Vec<String> = vec![];
     let default = vec![StoryRankingSort {
         sort: String::from("timestamp"),
         asc: false,
@@ -667,9 +746,29 @@ async fn get_story_ranking(req: HttpRequest, model: web::Json<StoryRankingFilter
 
     let sort_clause = format!("order by {} ", sort_query.join(" "));
 
-    // TODO: execute postgres query and return GetStory
     let query = format!("{} \n{} \n{}", from_clause, where_clause, sort_clause);
-    HttpResponse::Ok().body(query)
+    println!("{}", &query);
+    println!("{:?}", parameters);
+    Ok(QueryParameters { query, parameters })
+}
+
+#[get("/story_rankings")]
+async fn get_story_ranking(req: HttpRequest, data: web::Data<AppState>, model: web::Json<StoryRankingFilter>) -> impl Responder {
+    match data.authenticate(&req)
+        .and_then(|mut auth| {
+            let query = get_query(model)?;
+            let prep = auth.conn.prepare(&query.query)?;
+            let rows: Vec<tokio_postgres::row::Row> = auth.conn.query(
+                &prep,
+                &query.parameters.iter()
+                    .map(|v| v.to_dynamic())
+                    .collect::<Vec<_>>())?;
+            let stories: Vec<GetStory> = rows.iter().map(GetStory::from).collect();
+            Ok(serde_json::to_string(&stories)?)
+        }) {
+        Ok(json) => HttpResponse::Ok().body(json),
+        Err(err) => err.to_response()
+    }
 }
 
 #[actix_web::main]
@@ -718,6 +817,13 @@ async fn main() -> std::io::Result<()> {
 
         let my_app_state = AppState { pool, hash_key };
 
+        let json_cfg = web::JsonConfig::default()
+            .error_handler(|err, _req| {
+                let err_message = format!("{:?}", &err);
+                let bad_req = HttpResponse::BadRequest().body(err_message);
+                error::InternalError::from_response(err, bad_req).into()
+            });
+
         let auth = web::scope("/auth")
             .service(register)
             .service(sign_in)
@@ -736,6 +842,7 @@ async fn main() -> std::io::Result<()> {
 
         App::new()
             .data(my_app_state.clone())
+            .app_data(json_cfg)
             .service(index)
             .service(api)
     }).bind(addr_port)?
