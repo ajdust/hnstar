@@ -39,7 +39,7 @@ const MERGE_STORY_SQL: &str = "\
     on conflict (story_id)
     do update set descendants = $6, score = $7";
 
-async fn merge_top_stores(pg_client: &mut Client, stories: &Vec<Story>) {
+async fn merge_top_stories(pg_client: &mut Client, stories: &Vec<Story>) {
     let txn = pg_client.transaction().await.unwrap();
     let sql = txn.prepare(MERGE_STORY_SQL).await.unwrap();
     for story in stories.iter() {
@@ -83,5 +83,5 @@ async fn main() {
 
     let top_stories = get_top_stories().await;
     println!("{:?}", top_stories);
-    merge_top_stores(&mut client, &top_stories).await;
+    merge_top_stories(&mut client, &top_stories).await;
 }
