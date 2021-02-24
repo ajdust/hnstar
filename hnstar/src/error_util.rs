@@ -5,6 +5,7 @@ pub enum WebError {
     Tokio(tokio_postgres::Error),
     Pool(deadpool::managed::PoolError<tokio_postgres::Error>),
     SerdeJson(serde_json::Error),
+    ReqwestError(reqwest::Error),
     Invalid(String),
     Unauthorized(String),
 }
@@ -21,12 +22,17 @@ impl From<deadpool::managed::PoolError<tokio_postgres::Error>> for WebError {
     fn from(error: deadpool::managed::PoolError<tokio_postgres::Error>) -> Self { WebError::Pool(error) }
 }
 
+impl From<reqwest::Error> for WebError {
+    fn from(error: reqwest::Error) -> Self { WebError::ReqwestError(error) }
+}
+
 impl fmt::Debug for WebError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             WebError::Tokio(e) => e.fmt(f),
             WebError::Pool(e) => e.fmt(f),
             WebError::SerdeJson(e) => e.fmt(f),
+            WebError::ReqwestError(e) => e.fmt(f),
             WebError::Invalid(e) => e.fmt(f),
             WebError::Unauthorized(e) => e.fmt(f),
         }

@@ -1,7 +1,7 @@
 mod aliases;
 mod error_util;
 
-use actix_web::{get, post, App, HttpResponse, HttpRequest, HttpServer, Responder, web, error};
+use actix_web::{get, post, App, HttpResponse, HttpRequest, HttpServer, Responder, web, error, HttpMessage};
 use aliases::*;
 use chrono::{Utc, Duration, DateTime, NaiveDateTime};
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
@@ -46,16 +46,35 @@ pub struct AuthenticatedConnection {
 }
 
 #[derive(Clone)]
-struct AppState { pool: PgPool }
+struct AppState {
+    pool: PgPool,
+    auth_url: String,
+    auth_client: reqwest::Client,
+}
 
 impl AppState {
     async fn conn(&self) -> Result<PgConn, WebError> {
         Ok(self.pool.get().await?)
     }
 
-    async fn authenticate(&self, _req: &HttpRequest) -> Result<AuthenticatedConnection, WebError> {
-        // TODO: forward request to internal
-        let response: Option<AuthenticatedUser> = None;
+    async fn authenticate(&self, req: &HttpRequest, data: &web::Data<AppState>) -> Result<AuthenticatedConnection, WebError> {
+        let auth_header = req.headers().get("Authorization")
+            .and_then(|h| h.to_str().ok())
+            .ok_or(WebError::Unauthorized(String::from("Authorization header missing")))?;
+        let auth_req_url = match reqwest::Url::parse(format!("{}/user/get", data.auth_url).as_str()) {
+            Ok(auth_req_url) => auth_req_url,
+            Err(_) => { return Err(WebError::Invalid(format!("Error parsing authentication URL {}", data.auth_url))); }
+        };
+
+        let auth_resp = data.auth_client
+            .post(auth_req_url)
+            .header(reqwest::header::AUTHORIZATION, auth_header)
+            .send()
+            .await?
+            .json::<AuthenticatedUser>()
+            .await?;
+
+        let response: Option<AuthenticatedUser> = Some(auth_resp);
         if let Some(user) = response {
             let conn = self.conn().await?;
             Ok(AuthenticatedConnection { user, conn })
@@ -65,33 +84,55 @@ impl AppState {
     }
 }
 
-#[post("/anonymous/{mode}")]
-async fn authenticate_anonymous(_req: HttpRequest, _data: web::Data<AppState>, mode: web::Path<String>) -> impl Responder {
-    if mode.as_str() == "sign_in" {
-        // TODO: forward to internal
-        HttpResponse::NotFound().finish()
-    } else if mode.as_str() == "sign_up" {
-        // TODO: forward to internal
-        HttpResponse::NotFound().finish()
-    } else {
-        HttpResponse::NotFound().finish()
-    }
-}
 
-#[post("/user/{mode}")]
-async fn authenticate_user(_req: HttpRequest, _data: web::Data<AppState>, mode: web::Path<String>) -> impl Responder {
-    if mode.as_str() == "sign_in_token_refresh" {
+#[post("/authenticate/{mode}")]
+async fn authenticate(body: web::Bytes, data: web::Data<AppState>, mode: web::Path<String>) -> impl Responder {
+    let m = mode.as_str();
+    if m == "test" {
+        let r = body.to_vec();
+        let b = String::from_utf8(r).unwrap();
+        return HttpResponse::Ok().body(b);
+    } else if m == "sign_in" || m == "sign_up" {
         // TODO: forward to internal
-        HttpResponse::NotFound().finish()
-    } else if mode.as_str() == "sign_out" {
-        // TODO: forward to internal
-        HttpResponse::NotFound().finish()
-    } else if mode.as_str() == "get" {
-        // TODO: forward to internal
-        HttpResponse::NotFound().finish()
-    } else {
-        HttpResponse::NotFound().finish()
+        let auth_req_url = match reqwest::Url::parse(format!("{}/anonymous/{}", data.auth_url, m).as_str()) {
+            Ok(auth_req_url) => auth_req_url,
+            Err(_) => { return WebError::Invalid(format!("Error parsing authentication URL {}", data.auth_url)).to_response(); }
+        };
+
+        let resp = match data.auth_client
+            .post(auth_req_url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body)
+            .send().await {
+            Ok(resp) => resp,
+            Err(err) => { return WebError::from(err).to_response(); }
+        };
+
+        let rstatus = resp.status();
+        return if rstatus == 200 {
+            HttpResponse::Ok().body(resp.text().await.unwrap())
+        } else if rstatus == 401 {
+            HttpResponse::Unauthorized().body(resp.text().await.unwrap())
+        } else if rstatus == 500 {
+            HttpResponse::InternalServerError().body(resp.text().await.unwrap())
+        } else {
+            HttpResponse::BadRequest().body(format!("Status: {} = {}", rstatus, resp.text().await.unwrap()))
+        }
     }
+
+    // let auth_header = match req.headers().get("Authorization")
+    //     .and_then(|h| h.to_str().ok())
+    //     .ok_or(WebError::Unauthorized(String::from("Authorization header missing"))) {
+    //
+    //     Ok(auth_header) => auth_header,
+    //     Err(_) => { return HttpResponse::Unauthorized().body("No authorization header found"); }
+    // };
+    //
+    // if m == "sign_in_token_refresh" || m == "sign_out" || m == "get" {
+    //
+    // }
+
+    HttpResponse::NotFound().finish()
 }
 
 #[derive(Deserialize)]
@@ -143,7 +184,7 @@ async fn do_set_story_ranking(auth: &mut AuthenticatedConnection, model: &Vec<Se
 
 #[post("/story_rankings")]
 async fn set_story_ranking(req: HttpRequest, data: web::Data<AppState>, model: web::Json<Vec<SetStory>>) -> impl Responder {
-    let mut auth = match data.authenticate(&req).await {
+    let mut auth = match data.authenticate(&req, &data).await {
         Ok(auth) => auth,
         Err(err) => { return err.to_response(); }
     };
@@ -434,7 +475,7 @@ async fn do_get_story_ranking(auth: &mut AuthenticatedConnection, user_id: i32, 
 
 #[get("/story_rankings")]
 async fn get_story_ranking(req: HttpRequest, data: web::Data<AppState>, model: web::Json<StoryRankingFilter>) -> impl Responder {
-    let mut auth = match data.authenticate(&req).await {
+    let mut auth = match data.authenticate(&req, &data).await {
         Ok(auth) => auth,
         Err(err) => { return err.to_response(); }
     };
@@ -484,7 +525,12 @@ async fn main() -> std::io::Result<()> {
         let manager = Manager::from_config(config, NoTls, manager_config);
         let pool = Pool::new(manager, 30);
 
-        let my_app_state = AppState { pool };
+        // TODO: convert to environment variable
+        let auth_url = String::from("https://127.0.0.1:8000");
+        let auth_client = reqwest::ClientBuilder::new()
+            .danger_accept_invalid_certs(true)
+            .build().unwrap();
+        let my_app_state = AppState { pool, auth_url, auth_client };
 
         let json_cfg = web::JsonConfig::default()
             .error_handler(|err, _req| {
@@ -501,8 +547,7 @@ async fn main() -> std::io::Result<()> {
             .data(my_app_state.clone())
             .app_data(json_cfg)
             .service(ranks)
-            .service(authenticate_anonymous)
-            .service(authenticate_user);
+            .service(authenticate);
 
         if let Some(static_directory) = static_directory {
             let path = static_directory.to_str().unwrap();
