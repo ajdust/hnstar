@@ -86,17 +86,21 @@ impl AppState {
 
 
 #[post("/authenticate/{mode}")]
-async fn authenticate(body: web::Bytes, data: web::Data<AppState>, mode: web::Path<String>) -> impl Responder {
+async fn authenticate(req: HttpRequest, data: web::Data<AppState>, body:web::Bytes, mode: web::Path<String>) -> impl Responder {
     let m = mode.as_str();
-    if m == "test" {
+    if m == "mirror" {
         let r = body.to_vec();
         let b = String::from_utf8(r).unwrap();
         return HttpResponse::Ok().body(b);
-    } else if m == "sign_in" || m == "sign_up" {
-        // TODO: forward to internal
+    }
+
+    let response = if m == "sign_in" || m == "sign_up" {
         let auth_req_url = match reqwest::Url::parse(format!("{}/anonymous/{}", data.auth_url, m).as_str()) {
             Ok(auth_req_url) => auth_req_url,
-            Err(_) => { return WebError::Invalid(format!("Error parsing authentication URL {}", data.auth_url)).to_response(); }
+            Err(_) => {
+                return WebError::Invalid(format!("Error parsing authentication URL {}", data.auth_url))
+                    .to_response();
+            }
         };
 
         let resp = match data.auth_client
@@ -108,31 +112,52 @@ async fn authenticate(body: web::Bytes, data: web::Data<AppState>, mode: web::Pa
             Err(err) => { return WebError::from(err).to_response(); }
         };
 
-        let rstatus = resp.status();
-        return if rstatus == 200 {
-            HttpResponse::Ok().body(resp.text().await.unwrap())
-        } else if rstatus == 401 {
-            HttpResponse::Unauthorized().body(resp.text().await.unwrap())
-        } else if rstatus == 500 {
-            HttpResponse::InternalServerError().body(resp.text().await.unwrap())
+        Some(resp)
+    } else if m == "sign_in_token_refresh" || m == "sign_out" || m == "get" {
+        let auth_header = match req.headers().get("Authorization")
+            .and_then(|h| h.to_str().ok())
+            .ok_or(WebError::Unauthorized(String::from("Authorization header missing"))) {
+            Ok(auth_header) => auth_header,
+            Err(_) => {
+                return HttpResponse::Unauthorized().body("No authorization header found");
+            }
+        };
+
+        let auth_req_url = match reqwest::Url::parse(format!("{}/user/{}", data.auth_url, m).as_str()) {
+            Ok(auth_req_url) => auth_req_url,
+            Err(_) => {
+                return WebError::Invalid(format!("Error parsing authentication URL {}", data.auth_url))
+                    .to_response();
+            }
+        };
+
+        let resp = match data.auth_client
+            .post(auth_req_url)
+            .header(reqwest::header::AUTHORIZATION, auth_header)
+            .send().await {
+            Ok(resp) => resp,
+            Err(err) => { return WebError::from(err).to_response(); }
+        };
+
+        Some(resp)
+    } else {
+        None
+    };
+
+    if let Some(response) = response {
+        let status = response.status();
+        return if status == 200 {
+            HttpResponse::Ok().body(response.text().await.unwrap())
+        } else if status == 401 {
+            HttpResponse::Unauthorized().body(response.text().await.unwrap())
+        } else if status == 500 {
+            HttpResponse::InternalServerError().body(response.text().await.unwrap())
         } else {
-            HttpResponse::BadRequest().body(format!("Status: {} = {}", rstatus, resp.text().await.unwrap()))
+            HttpResponse::BadRequest().body(format!("Status: {} = {}", status, response.text().await.unwrap()))
         }
+    } else {
+        HttpResponse::NotFound().finish()
     }
-
-    // let auth_header = match req.headers().get("Authorization")
-    //     .and_then(|h| h.to_str().ok())
-    //     .ok_or(WebError::Unauthorized(String::from("Authorization header missing"))) {
-    //
-    //     Ok(auth_header) => auth_header,
-    //     Err(_) => { return HttpResponse::Unauthorized().body("No authorization header found"); }
-    // };
-    //
-    // if m == "sign_in_token_refresh" || m == "sign_out" || m == "get" {
-    //
-    // }
-
-    HttpResponse::NotFound().finish()
 }
 
 #[derive(Deserialize)]
