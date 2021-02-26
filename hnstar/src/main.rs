@@ -31,17 +31,21 @@ mod json_time {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct AuthenticatedUser {
+pub struct UserData {
     #[serde(rename = "userId")]
     pub user_id: i32,
     pub username: String,
-    pub token: String,
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub status: i32,
     #[serde(with = "json_time")]
-    pub expires: chrono::NaiveDateTime,
+    pub created: chrono::NaiveDateTime,
+    #[serde(with = "json_time")]
+    pub updated: chrono::NaiveDateTime,
 }
 
 pub struct AuthenticatedConnection {
-    pub user: AuthenticatedUser,
+    pub user: UserData,
     pub conn: PgConn,
 }
 
@@ -69,12 +73,10 @@ impl AppState {
         let auth_resp = data.auth_client
             .post(auth_req_url)
             .header(reqwest::header::AUTHORIZATION, auth_header)
-            .send()
-            .await?
-            .json::<AuthenticatedUser>()
-            .await?;
+            .send().await?
+            .json::<UserData>().await?;
 
-        let response: Option<AuthenticatedUser> = Some(auth_resp);
+        let response: Option<UserData> = Some(auth_resp);
         if let Some(user) = response {
             let conn = self.conn().await?;
             Ok(AuthenticatedConnection { user, conn })
@@ -207,7 +209,7 @@ async fn do_set_story_ranking(auth: &mut AuthenticatedConnection, model: &Vec<Se
     Ok(String::from("All good"))
 }
 
-#[post("/story_rankings")]
+#[post("/set")]
 async fn set_story_ranking(req: HttpRequest, data: web::Data<AppState>, model: web::Json<Vec<SetStory>>) -> impl Responder {
     let mut auth = match data.authenticate(&req, &data).await {
         Ok(auth) => auth,
@@ -498,7 +500,7 @@ async fn do_get_story_ranking(auth: &mut AuthenticatedConnection, user_id: i32, 
     Ok(serde_json::to_string(&stories)?)
 }
 
-#[get("/story_rankings")]
+#[post("/query")]
 async fn get_story_ranking(req: HttpRequest, data: web::Data<AppState>, model: web::Json<StoryRankingFilter>) -> impl Responder {
     let mut auth = match data.authenticate(&req, &data).await {
         Ok(auth) => auth,
@@ -522,6 +524,31 @@ async fn main() -> std::io::Result<()> {
             String::from("127.0.0.1:8000").to_socket_addrs().unwrap().next().unwrap()
         }
     };
+
+    use std::path::{Path};
+
+    let private_key_file = std::env::var("PRIVATE_KEY_FILE")
+        .map(|v| Path::new(&v).to_owned())
+        .map_or(None, |p| if p.is_file() { Some(p) } else { None });
+    if private_key_file.is_none() {
+        println!("No PRIVATE_KEY_FILE found");
+        return Ok(());
+    }
+
+    let certificate_file = std::env::var("CERTIFICATE_FILE")
+        .map(|v| Path::new(&v).to_owned())
+        .map_or(None, |p| if p.is_file() { Some(p) } else { None });
+    if certificate_file.is_none() {
+        println!("No CERTIFICATE_FILE found");
+        return Ok(());
+    }
+
+    let mut tls = openssl::ssl::SslAcceptor::mozilla_intermediate(
+        openssl::ssl::SslMethod::tls()).unwrap();
+    tls.set_private_key_file(
+        Path::new(&private_key_file.unwrap()), openssl::ssl::SslFiletype::PEM).unwrap();
+    tls.set_certificate_file(
+        Path::new(&certificate_file.unwrap()), openssl::ssl::SslFiletype::PEM).unwrap();
 
     HttpServer::new(|| {
         let pg_url = match std::env::var("POSTGRESQL_URL") {
@@ -581,7 +608,7 @@ async fn main() -> std::io::Result<()> {
         } else {
             app
         }
-    }).bind(addr_port)?
+    }).bind_openssl(addr_port, tls)?
         .run()
         .await
 }
