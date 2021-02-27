@@ -412,11 +412,11 @@ function GetStories(props: State) {
         const response = await fetch(API_URL + "ranks/query", {
             method: "POST",
             body: JSON.stringify({
-                "z-score": { "gt": 0 }
+                "z-score": { gt: 0 },
             }),
             headers: {
                 Authorization: header,
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             },
         });
 
@@ -434,7 +434,7 @@ function GetStories(props: State) {
         <Form className="api-test-form">
             <Button onClick={go}>Get Stories</Button>
         </Form>
-    )
+    );
 }
 
 function ApiTest(props: State) {
@@ -480,10 +480,8 @@ function App() {
 
     return (
         <div className={"api-test-container"}>
-            <>
-                <ApiTest {...state} />
-                <ApiTestLog messages={messages} />
-            </>
+            <ApiTest {...state} />
+            <ApiTestLog messages={messages} />
         </div>
     );
 }
