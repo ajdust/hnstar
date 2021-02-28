@@ -11,6 +11,10 @@ module.exports = {
                 use: "ts-loader",
                 exclude: /node_modules/,
             },
+            {
+                test: /\.css$/i,
+                use: ["css-loader"],
+            },
         ],
     },
     resolve: {
@@ -22,7 +26,7 @@ module.exports = {
     },
     plugins: [
         new CopyIt({
-            patterns: [{ from: "./index.html" }],
+            patterns: [{ from: "./index.html" }, { from: "./index.css" }],
         }),
     ],
 };
