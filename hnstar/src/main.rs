@@ -86,7 +86,6 @@ impl AppState {
     }
 }
 
-
 #[post("/authenticate/{mode}")]
 async fn authenticate(req: HttpRequest, data: web::Data<AppState>, body:web::Bytes, mode: web::Path<String>) -> impl Responder {
     let m = mode.as_str();
@@ -458,6 +457,8 @@ fn get_query<'a>(model: &StoryRankingFilter, user_id: i32) -> Result<QueryParame
     let where_clause = format!("where {} ", where_query.join(" and "));
 
     // sorting
+    // TODO: allow sorting by n number of days, e.g. for reddit-style daily/weekly tops
+    let allowed_sorts = vec!["timestamp", "score", "stars"];
     let mut sort_query: Vec<String> = vec![];
     let default = vec![StoryRankingSort {
         sort: String::from("timestamp"),
@@ -465,10 +466,12 @@ fn get_query<'a>(model: &StoryRankingFilter, user_id: i32) -> Result<QueryParame
     }];
     let sorts = model.sort.as_ref().map_or(&default, |v| v);
     for sort in sorts.iter() {
-        if sort.asc {
-            sort_query.push(format!("{} asc", sort.sort));
-        } else {
-            sort_query.push(format!("{} desc", sort.sort));
+        if allowed_sorts.contains(&sort.sort.as_str()) {
+            if sort.asc {
+                sort_query.push(format!("{} asc", sort.sort));
+            } else {
+                sort_query.push(format!("{} desc", sort.sort));
+            }
         }
     }
 
@@ -504,7 +507,26 @@ async fn do_get_story_ranking(auth: &mut AuthenticatedConnection, user_id: i32, 
 async fn get_story_ranking(req: HttpRequest, data: web::Data<AppState>, model: web::Json<StoryRankingFilter>) -> impl Responder {
     let mut auth = match data.authenticate(&req, &data).await {
         Ok(auth) => auth,
-        Err(err) => { return err.to_response(); }
+        Err(_) => {
+            let conn = data.conn().await;
+            match conn {
+                Ok(conn) => AuthenticatedConnection {
+                    conn,
+                    user: UserData {
+                        status: 0,
+                        user_id: -1,
+                        username: String::from("default"),
+                        email: None,
+                        name: None,
+                        created: chrono::Utc::now().naive_utc(),
+                        updated: chrono::Utc::now().naive_utc()
+                    },
+                },
+                Err(err) => {
+                    return err.to_response();
+                }
+            }
+        }
     };
 
     let user_id = auth.user.user_id;
