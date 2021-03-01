@@ -14,22 +14,22 @@ export interface Story {
 }
 
 export interface IntFilter {
-    gt: number | null;
-    lt: number | null;
+    gt?: number;
+    lt?: number;
 }
 
 export interface BigIntFilter {
-    gt: number | null;
-    lt: number | null;
+    gt?: number;
+    lt?: number;
 }
 
 export interface FloatFilter {
-    gt: number | null;
-    lt: number | null;
+    gt?: number;
+    lt?: number;
 }
 
 export interface StoryRankingSort {
-    sort: String;
+    sort: "timestamp" | "score" | "stars";
     asc: boolean;
 }
 
@@ -39,18 +39,18 @@ export interface PgRegex {
 }
 
 export interface StoryRankingFilter {
-    timestamp: BigIntFilter | null;
-    page_size: number | null;
-    page_number: number | null;
-    title: PgRegex | null;
-    url: PgRegex | null;
-    score: IntFilter | null;
-    z_score: FloatFilter | null;
-    status: number | null;
-    flags: number | null;
-    stars: IntFilter | null;
-    comment: PgRegex | null;
-    sort: (StoryRankingSort | null)[];
+    timestamp?: BigIntFilter;
+    page_size?: number;
+    page_number?: number;
+    title?: PgRegex;
+    url?: PgRegex;
+    score?: IntFilter;
+    z_score?: FloatFilter;
+    status?: number;
+    flags?: number;
+    stars?: IntFilter;
+    comment?: PgRegex;
+    sort?: StoryRankingSort[];
 }
 
 export function getStoriesRequest(filter: StoryRankingFilter): Request {
@@ -61,4 +61,14 @@ export function getStoriesRequest(filter: StoryRankingFilter): Request {
             "Content-Type": "application/json",
         },
     });
+}
+
+export function validateStory(story: Story): string | null {
+    if (!story) return "Invalid story: no data";
+    if (typeof story.story_id !== "number") return "Invalid story: bad story_id";
+    if (typeof story.score !== "number") return "Invalid story: bad score";
+    if (typeof story.timestamp !== "number") return "Invalid story: bad timestamp";
+    if (typeof story.title !== "string" || !story.title || !story.title.trim()) return "Invalid story: bad title";
+    story.key = story.story_id;
+    return null;
 }

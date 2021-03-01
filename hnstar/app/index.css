@@ -1,7 +1,39 @@
-html, body {
-    height: 100%;
+.menu .comments {
+    font-size: 0.7rem;
 }
-
-body {
-    font-family: sans-serif;
+.menu .points {
+    font-size: 0.7rem;
+}
+.io a {
+    text-decoration: underline;
+}
+ul.entries {
+    margin-bottom: 0;
+}
+.comments {
+    text-align: right;
+}
+.points {
+    text-align: right;
+}
+.entries p {
+    margin-bottom: 0;
+}
+.entries a {
+    padding: 6px 0;
+}
+.entries .homepage {
+    color: #ff6600;
+}
+.entries a:hover {
+    text-decoration: none;
+    background-color: #f6f7ee;
+}
+.entries a.hn:visited,
+.entries a.link:visited {
+    color: #999;
+}
+.entries .source {
+    color: #999;
+    font-size: 12px;
 }
