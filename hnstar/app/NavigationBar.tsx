@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Navbar, Nav, Modal, Button, Form, FormControl, Col } from "react-bootstrap";
+import { Navbar, Nav, Modal, Button, Form, FormControl, Col, InputGroup } from "react-bootstrap";
 import { useState } from "react";
 import { StoryRankingFilter } from "./ApiStories";
 
@@ -15,18 +15,25 @@ function NavigationBar(props: { filters: StoryRankingFilter; setFilters: (filter
 
     return (
         <>
-            <Navbar bg="light" expand="lg">
+            <Navbar bg="light" expand="sm">
                 <Navbar.Brand href="#">hnstar</Navbar.Brand>
                 <Navbar.Toggle aria-controls="basic-navbar-nav" />
                 <Navbar.Collapse id="basic-navbar-nav">
                     <Nav className="mr-auto">
-                        <Nav.Link onClick={handleShowSignIn}>sign in</Nav.Link>
+                        <Nav.Link style={{ "min-width": "4rem" }} onClick={handleShowSignIn}>
+                            sign in
+                        </Nav.Link>
                         <Nav.Link onClick={handleShowFilter}>filter</Nav.Link>
                     </Nav>
-                    <Form inline>
-                        <FormControl type="text" placeholder="Search" className="mr-sm-2" />
-                        <Button variant="outline-success">Search</Button>
-                    </Form>
+
+                    <InputGroup className="mr-auto" style={{ "max-width": "25rem" }}>
+                        <FormControl type="text" placeholder="Search" />
+                        <InputGroup.Append>
+                            <Button type="button" variant="outline-success">
+                                Search
+                            </Button>
+                        </InputGroup.Append>
+                    </InputGroup>
                 </Navbar.Collapse>
             </Navbar>
             <Modal show={showSignIn} onHide={handleHideSignIn}>

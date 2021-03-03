@@ -14,26 +14,17 @@ function PageContent(props: { stories: Story[] }) {
 
     return (
         <div id="page" className="container entries">
-            <div className="menu row mr-5">
-                <div className="comments col-1">comments</div>
-                <div className="points col-1">points</div>
-                <div className="col-8"></div>
-            </div>
             {stories.map((story) => {
                 return (
-                    <div key={story.key} className="entry row">
-                        <a
-                            id={`hn-${story.story_id}`}
-                            className="col-1 justify-content-right story"
-                            href={hnUrl(story.story_id)}
-                        >
-                            <div className="row mr-1">
+                    <div key={story.key} className="entry row pl-4 pr-4">
+                        <a id={`hn-${story.story_id}`} className="col-1 pr-1 story" href={hnUrl(story.story_id)}>
+                            <div className="row">
                                 <div className="comments col">{story.descendants}</div>
-                                <div className="points homepage col">{story.score}</div>
+                                <div className="points homepage col pl-0">{story.score}</div>
                             </div>
                         </a>
-                        <a className="link col-8 story" href={story.url}>
-                            {story.title + " "}
+                        <a className="link col-11 story pl-1" href={story.url}>
+                            <span className="ml-1">{story.title + " "}</span>
                             <span className="source">{urlSource(story.url)}</span>
                         </a>
                     </div>
