@@ -296,7 +296,7 @@ impl From<&tokio_postgres::row::Row> for GetStory {
             story_id,
             score,
             timestamp,
-            title,
+            title: htmlescape::decode_html(title).map_or_else(|_| String::from(title), |v| v),
             url,
             status,
             descendants,
