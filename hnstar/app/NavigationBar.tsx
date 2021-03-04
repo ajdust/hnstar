@@ -3,8 +3,15 @@ import { Navbar, Nav, Modal, Button, Form, FormControl, Col, InputGroup } from "
 import { useState } from "react";
 import { StoryRankingFilter } from "./ApiStories";
 
-function NavigationBar(props: { filters: StoryRankingFilter; setFilters: (filters: StoryRankingFilter) => void }) {
-    const { filters, setFilters } = props;
+interface NavigationProps {
+    filter: StoryRankingFilter;
+    setFilter: (filter: StoryRankingFilter) => void;
+    dateDisplay: string;
+    setDateDisplay: (dateDisplay: string) => void;
+}
+
+function NavigationBar(props: NavigationProps) {
+    const { filter, setFilter, dateDisplay, setDateDisplay } = props;
     const [showSignIn, setShowSignIn] = useState(false);
     const handleHideSignIn = () => setShowSignIn(false);
     const handleShowSignIn = () => setShowSignIn(true);
@@ -13,6 +20,10 @@ function NavigationBar(props: { filters: StoryRankingFilter; setFilters: (filter
     const handleHideFilter = () => setShowFilter(false);
     const handleShowFilter = () => setShowFilter(true);
 
+    const [showSettings, setShowSettings] = useState(false);
+    const handleHideSettings = () => setShowSettings(false);
+    const handleShowSettings = () => setShowSettings(true);
+
     return (
         <>
             <Navbar bg="light" expand="sm">
@@ -20,13 +31,14 @@ function NavigationBar(props: { filters: StoryRankingFilter; setFilters: (filter
                 <Navbar.Toggle aria-controls="basic-navbar-nav" />
                 <Navbar.Collapse id="basic-navbar-nav">
                     <Nav className="mr-auto">
-                        <Nav.Link style={{ "min-width": "4rem" }} onClick={handleShowSignIn}>
+                        <Nav.Link style={{ minWidth: "4rem" }} onClick={handleShowSignIn}>
                             sign in
                         </Nav.Link>
                         <Nav.Link onClick={handleShowFilter}>filter</Nav.Link>
+                        <Nav.Link onClick={handleShowSettings}>settings</Nav.Link>
                     </Nav>
 
-                    <InputGroup className="mr-auto" style={{ "max-width": "25rem" }}>
+                    <InputGroup className="mr-auto" style={{ maxWidth: "25rem" }}>
                         <FormControl type="text" placeholder="Search" />
                         <InputGroup.Append>
                             <Button type="button" variant="outline-success">
@@ -62,36 +74,29 @@ function NavigationBar(props: { filters: StoryRankingFilter; setFilters: (filter
             </Modal>
             <Modal show={showFilter} onHide={handleHideFilter}>
                 <Modal.Body>
+                    {/* TODO: dynamic placeholder */}
                     <Form.Group controlId="filterTimestamp">
-                        <Form.Label>Timestamp</Form.Label>
-                        {/* TODO: dynamic placeholder */}
-                        <Form.Control type="date" />
-                    </Form.Group>
-                    <Form.Group controlId="filterPageSize">
-                        <Form.Label>Page Size</Form.Label>
-                        <Form.Control type="number" placeholder={100} />
-                    </Form.Group>
-                    {/* TODO: dynamic page number */}
-                    <Form.Group controlId="filterPageNumber">
-                        <Form.Label>Page Number</Form.Label>
-                        <Form.Control type="number" placeholder={1} />
-                    </Form.Group>
-                    <Form.Group controlId="filterTitle">
-                        <Form.Label>Title (regex)</Form.Label>
-                        <Form.Control type="text" />
-                    </Form.Group>
-                    <Form.Group controlId="filterUrl">
-                        <Form.Label>URL (regex)</Form.Label>
-                        <Form.Control type="text" />
-                    </Form.Group>
-                    <Form.Group controlId="filterScore">
-                        <Form.Label>Score</Form.Label>
                         <Form.Row>
                             <Col>
-                                <Form.Control type="number" placeholder="Minimum" />
+                                <Form.Label>Since</Form.Label>
+                                <Form.Control type="date" />
                             </Col>
                             <Col>
-                                <Form.Control type="number" placeholder="Maximum" />
+                                <Form.Label>Until</Form.Label>
+                                <Form.Control type="date" />
+                            </Col>
+                        </Form.Row>
+                    </Form.Group>
+                    {/* TODO: dynamic page size/number */}
+                    <Form.Group controlId="filterPage">
+                        <Form.Row>
+                            <Col>
+                                <Form.Label>Page Size</Form.Label>
+                                <Form.Control type="number" placeholder={100} />
+                            </Col>
+                            <Col>
+                                <Form.Label>Page Number</Form.Label>
+                                <Form.Control type="number" placeholder={1} />
                             </Col>
                         </Form.Row>
                     </Form.Group>
@@ -106,6 +111,29 @@ function NavigationBar(props: { filters: StoryRankingFilter; setFilters: (filter
                             </Col>
                         </Form.Row>
                     </Form.Group>
+                    <Form.Group controlId="filterScore">
+                        <Form.Label>Score</Form.Label>
+                        <Form.Row>
+                            <Col>
+                                <Form.Control type="number" placeholder="Minimum" />
+                            </Col>
+                            <Col>
+                                <Form.Control type="number" placeholder="Maximum" />
+                            </Col>
+                        </Form.Row>
+                    </Form.Group>
+                    <Form.Group controlId="filterTitle">
+                        <Form.Row>
+                            <Col>
+                                <Form.Label>Title (regex)</Form.Label>
+                                <Form.Control type="text" />
+                            </Col>
+                            <Col>
+                                <Form.Label>URL (regex)</Form.Label>
+                                <Form.Control type="text" />
+                            </Col>
+                        </Form.Row>
+                    </Form.Group>
                     {/* TODO: add sorting ability */}
                 </Modal.Body>
                 <Modal.Footer>
@@ -114,6 +142,24 @@ function NavigationBar(props: { filters: StoryRankingFilter; setFilters: (filter
                     </Button>
                     <Button variant="primary" onClick={handleHideFilter}>
                         Apply
+                    </Button>
+                </Modal.Footer>
+            </Modal>
+            <Modal show={showSettings} onHide={handleHideSettings}>
+                <Modal.Body>
+                    <Form.Group controlId="displayDateAs">
+                        <Form.Label>Display Date As</Form.Label>
+                        <Form.Control
+                            type="text"
+                            placeholder="distance"
+                            value={dateDisplay}
+                            onChange={(e: React.FormEvent<HTMLInputElement>) => setDateDisplay(e.currentTarget.value)}
+                        />
+                    </Form.Group>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={handleHideSettings}>
+                        Close
                     </Button>
                 </Modal.Footer>
             </Modal>

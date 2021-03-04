@@ -1,19 +1,25 @@
 import * as React from "react";
-import "./App.css";
 import NavigationBar from "./NavigationBar";
 import PageContent from "./PageContent";
 import { getStoriesRequest, Story, StoryRankingFilter, validateStory } from "./ApiStories";
 import { useEffect, useState } from "react";
-
-let FIRST_RUN = true;
+import { AppState } from "./AppState";
 
 function App() {
-    const [stories, setStories] = useState([] as Story[]);
-    const [filters, setFilters] = useState({} as StoryRankingFilter);
+    const [appState, setAppState] = useState({
+        stories: [],
+        dateDisplay: "distance",
+        filter: {},
+    } as AppState);
+
+    const setFilter = (filter: StoryRankingFilter) => setAppState({ ...appState, filter });
+    const setPage = (pageSize: number, pageNumber: number) =>
+        setAppState({ ...appState, filter: { ...appState.filter, page_size: pageSize, page_number: pageNumber } });
+    const setDateDisplay = (dateDisplay: string) => setAppState({ ...appState, dateDisplay });
 
     useEffect(() => {
         const getStories = async () => {
-            const request = getStoriesRequest(filters);
+            const request = getStoriesRequest(appState.filter);
             const response = await fetch(request);
             if (response.status !== 200) {
                 console.warn(response);
@@ -32,19 +38,26 @@ function App() {
                 stories.push(story);
             }
 
-            setStories(stories);
+            setAppState({ ...appState, stories });
         };
 
-        if (FIRST_RUN) {
-            getStories();
-            FIRST_RUN = false;
-        }
-    });
+        getStories();
+    }, [appState.filter]);
 
     return (
         <div className="App">
-            <NavigationBar filters={filters} setFilters={setFilters} />
-            <PageContent stories={stories} />
+            <NavigationBar
+                dateDisplay={appState.dateDisplay}
+                setDateDisplay={setDateDisplay}
+                filter={appState.filter}
+                setFilter={setFilter}
+            />
+            <PageContent
+                stories={appState.stories}
+                page={{ size: 100, number: 1 }}
+                dateDisplay={appState.dateDisplay}
+                setPage={setPage}
+            />
         </div>
     );
 }
