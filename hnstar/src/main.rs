@@ -255,11 +255,14 @@ struct PgRegex {
 #[derive(Deserialize)]
 struct StoryRankingFilter {
     timestamp: Option<BigIntFilter>,
+    #[serde(rename="pageSize")]
     page_size: Option<i32>,
+    #[serde(rename="pageNumber")]
     page_number: Option<i32>,
     title: Option<PgRegex>,
     url: Option<PgRegex>,
     score: Option<IntFilter>,
+    #[serde(rename="zScore")]
     z_score: Option<FloatFilter>,
     status: Option<i32>,
     flags: Option<i32>,
@@ -270,6 +273,7 @@ struct StoryRankingFilter {
 
 #[derive(Deserialize, Serialize)]
 struct GetStory {
+    #[serde(rename="storyId")]
     story_id: i64,
     score: i32,
     timestamp: i64,
@@ -296,7 +300,8 @@ impl From<&tokio_postgres::row::Row> for GetStory {
             story_id,
             score,
             timestamp,
-            title: htmlescape::decode_html(title).map_or_else(|_| String::from(title), |v| v),
+            title: htmlescape::decode_html(title)
+                .map_or_else(|_| String::from(title), |v| v),
             url,
             status,
             descendants,

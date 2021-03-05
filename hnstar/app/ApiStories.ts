@@ -1,7 +1,7 @@
 const API_URL = "/";
 
 export interface Story {
-    story_id: number;
+    storyId: number;
     score: number;
     timestamp: number;
     title: string;
@@ -40,12 +40,12 @@ export interface PgRegex {
 
 export interface StoryRankingFilter {
     timestamp?: BigIntFilter;
-    page_size?: number;
-    page_number?: number;
+    pageSize: number;
+    pageNumber: number;
     title?: PgRegex;
     url?: PgRegex;
     score?: IntFilter;
-    z_score?: FloatFilter;
+    zScore?: FloatFilter;
     status?: number;
     flags?: number;
     stars?: IntFilter;
@@ -65,10 +65,10 @@ export function getStoriesRequest(filter: StoryRankingFilter): Request {
 
 export function validateStory(story: Story): string | null {
     if (!story) return "Invalid story: no data";
-    if (typeof story.story_id !== "number") return "Invalid story: bad story_id";
+    if (typeof story.storyId !== "number") return "Invalid story: bad story_id";
     if (typeof story.score !== "number") return "Invalid story: bad score";
     if (typeof story.timestamp !== "number") return "Invalid story: bad timestamp";
     if (typeof story.title !== "string" || !story.title || !story.title.trim()) return "Invalid story: bad title";
-    story.key = story.story_id;
+    story.key = story.storyId;
     return null;
 }

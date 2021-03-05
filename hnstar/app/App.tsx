@@ -9,12 +9,15 @@ function App() {
     const [appState, setAppState] = useState({
         stories: [],
         dateDisplay: "distance",
-        filter: {},
+        filter: {
+            pageSize: 100,
+            pageNumber: 0,
+        },
     } as AppState);
 
     const setFilter = (filter: StoryRankingFilter) => setAppState({ ...appState, filter });
     const setPage = (pageSize: number, pageNumber: number) =>
-        setAppState({ ...appState, filter: { ...appState.filter, page_size: pageSize, page_number: pageNumber } });
+        setAppState({ ...appState, filter: { ...appState.filter, pageSize: pageSize, pageNumber: pageNumber } });
     const setDateDisplay = (dateDisplay: string) => setAppState({ ...appState, dateDisplay });
 
     useEffect(() => {
@@ -41,7 +44,7 @@ function App() {
             setAppState({ ...appState, stories });
         };
 
-        getStories();
+        getStories().then(() => window.scrollTo(0, 0));
     }, [appState.filter]);
 
     return (
@@ -54,7 +57,7 @@ function App() {
             />
             <PageContent
                 stories={appState.stories}
-                page={{ size: 100, number: 1 }}
+                page={{ size: appState.filter.pageSize, number: appState.filter.pageNumber }}
                 dateDisplay={appState.dateDisplay}
                 setPage={setPage}
             />
