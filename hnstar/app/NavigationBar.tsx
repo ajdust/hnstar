@@ -1,7 +1,8 @@
 import * as React from "react";
 import { Navbar, Nav, Modal, Button, Form, FormControl, Col, InputGroup } from "react-bootstrap";
-import { useState } from "react";
+import { ChangeEvent, useState } from "react";
 import { StoryRankingFilter } from "./ApiStories";
+import { format as dateformat, addMinutes } from "date-fns";
 
 interface NavigationProps {
     filter: StoryRankingFilter;
@@ -23,6 +24,16 @@ function NavigationBar(props: NavigationProps) {
     const [showSettings, setShowSettings] = useState(false);
     const handleHideSettings = () => setShowSettings(false);
     const handleShowSettings = () => setShowSettings(true);
+
+    const getDt = (epoch: number | undefined) => (!epoch ? "" : dateformat(new Date(epoch * 1000), "yyyy-MM-dd"));
+    const getEpoch = (date: string) => {
+        if (!date || date.trim() === "") return undefined;
+        let dt = new Date(date);
+        // undo timezone adaption
+        dt = addMinutes(dt, dt.getTimezoneOffset());
+
+        return date.trim() === "" ? undefined : dt.getTime() / 1000;
+    };
 
     return (
         <>
@@ -74,29 +85,25 @@ function NavigationBar(props: NavigationProps) {
             </Modal>
             <Modal show={showFilter} onHide={handleHideFilter}>
                 <Modal.Body>
-                    {/* TODO: dynamic placeholder */}
                     <Form.Group controlId="filterTimestamp">
                         <Form.Row>
                             <Col>
                                 <Form.Label>Since</Form.Label>
-                                <Form.Control type="date" />
+                                <Form.Control
+                                    type="date"
+                                    value={getDt(filter.timestamp?.gt)}
+                                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                        const value = e.currentTarget.value;
+                                        setFilter({
+                                            ...filter,
+                                            timestamp: { ...filter.timestamp, gt: getEpoch(value) },
+                                        });
+                                    }}
+                                />
                             </Col>
                             <Col>
                                 <Form.Label>Until</Form.Label>
-                                <Form.Control type="date" />
-                            </Col>
-                        </Form.Row>
-                    </Form.Group>
-                    {/* TODO: dynamic page size/number */}
-                    <Form.Group controlId="filterPage">
-                        <Form.Row>
-                            <Col>
-                                <Form.Label>Page Size</Form.Label>
-                                <Form.Control type="number" placeholder={100} />
-                            </Col>
-                            <Col>
-                                <Form.Label>Page Number</Form.Label>
-                                <Form.Control type="number" placeholder={1} />
+                                <Form.Control type="date" value={getDt(filter.timestamp?.lt)} />
                             </Col>
                         </Form.Row>
                     </Form.Group>
@@ -104,10 +111,10 @@ function NavigationBar(props: NavigationProps) {
                         <Form.Label>Z-Score</Form.Label>
                         <Form.Row>
                             <Col>
-                                <Form.Control type="number" placeholder="Minimum" />
+                                <Form.Control type="number" placeholder="Minimum" value={filter.zScore?.gt} />
                             </Col>
                             <Col>
-                                <Form.Control type="number" placeholder="Maximum" />
+                                <Form.Control type="number" placeholder="Maximum" value={filter.zScore?.lt} />
                             </Col>
                         </Form.Row>
                     </Form.Group>
@@ -115,10 +122,10 @@ function NavigationBar(props: NavigationProps) {
                         <Form.Label>Score</Form.Label>
                         <Form.Row>
                             <Col>
-                                <Form.Control type="number" placeholder="Minimum" />
+                                <Form.Control type="number" placeholder="Minimum" value={filter.score?.gt} />
                             </Col>
                             <Col>
-                                <Form.Control type="number" placeholder="Maximum" />
+                                <Form.Control type="number" placeholder="Maximum" value={filter.score?.lt} />
                             </Col>
                         </Form.Row>
                     </Form.Group>
@@ -126,22 +133,76 @@ function NavigationBar(props: NavigationProps) {
                         <Form.Row>
                             <Col>
                                 <Form.Label>Title (regex)</Form.Label>
-                                <Form.Control type="text" />
+                                <Form.Control type="text" value={filter.title?.regex} />
                             </Col>
                             <Col>
                                 <Form.Label>URL (regex)</Form.Label>
-                                <Form.Control type="text" />
+                                <Form.Control type="text" value={filter.url?.regex} />
                             </Col>
                         </Form.Row>
                     </Form.Group>
-                    {/* TODO: add sorting ability */}
+                    <Form.Group controlId="filterSort">
+                        <Form.Row>
+                            <Col>
+                                <Form.Label>Order By</Form.Label>
+                                <Form.Control
+                                    as="select"
+                                    custom
+                                    value={(filter.sort?.length || 0) > 0 ? filter.sort![0].sort : ""}
+                                >
+                                    <option>timestamp</option>
+                                    <option>score</option>
+                                    <option>stars</option>
+                                </Form.Control>
+                            </Col>
+                            <Col>
+                                <Form.Label>Then By</Form.Label>
+                                <Form.Control
+                                    as="select"
+                                    custom
+                                    value={(filter.sort?.length || 0) > 1 ? filter.sort![1].sort : ""}
+                                >
+                                    <option>timestamp</option>
+                                    <option>score</option>
+                                    <option>stars</option>
+                                </Form.Control>
+                            </Col>
+                        </Form.Row>
+                    </Form.Group>
+                    <Form.Group controlId="filterPage">
+                        <Form.Row>
+                            <Col>
+                                <Form.Label>Page Size</Form.Label>
+                                <Form.Control
+                                    type="number"
+                                    value={filter.pageSize}
+                                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                        const value = e.currentTarget.value;
+                                        let pageSize = parseInt(value) || 100;
+                                        if (pageSize <= 1) pageSize = 100;
+                                        setFilter({ ...filter, pageSize: pageSize });
+                                    }}
+                                />
+                            </Col>
+                            <Col>
+                                <Form.Label>Page Number</Form.Label>
+                                <Form.Control
+                                    type="number"
+                                    value={filter.pageNumber}
+                                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                        const value = e.currentTarget.value;
+                                        let pageNumber = parseInt(value) || 0;
+                                        if (pageNumber <= 0) pageNumber = 0;
+                                        setFilter({ ...filter, pageNumber: pageNumber });
+                                    }}
+                                />
+                            </Col>
+                        </Form.Row>
+                    </Form.Group>
                 </Modal.Body>
                 <Modal.Footer>
                     <Button variant="secondary" onClick={handleHideFilter}>
                         Close
-                    </Button>
-                    <Button variant="primary" onClick={handleHideFilter}>
-                        Apply
                     </Button>
                 </Modal.Footer>
             </Modal>

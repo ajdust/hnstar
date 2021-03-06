@@ -4,7 +4,6 @@ import PageContent from "./PageContent";
 import { getStoriesRequest, Story, StoryRankingFilter, validateStory } from "./ApiStories";
 import { useEffect, useState } from "react";
 import { AppState } from "./AppState";
-import { signInTokenRefresh } from "./ApiAuthentication";
 
 function getFilterFromUrl(): StoryRankingFilter {
     const sp = new URL(window.location.toString()).searchParams;
