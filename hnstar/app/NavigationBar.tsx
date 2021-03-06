@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Navbar, Nav, Modal, Button, Form, FormControl, Col, InputGroup } from "react-bootstrap";
 import { ChangeEvent, useState } from "react";
-import { StoryRankingFilter } from "./ApiStories";
+import { StoryRankingFilter, StoryRankingSort } from "./ApiStories";
 import { format as dateformat, addMinutes } from "date-fns";
 
 interface NavigationProps {
@@ -25,6 +25,14 @@ function NavigationBar(props: NavigationProps) {
     const handleHideSettings = () => setShowSettings(false);
     const handleShowSettings = () => setShowSettings(true);
 
+    const validRegExp = (regex: string) => {
+        try {
+            return new RegExp(regex) ? true : false;
+        } catch {
+            return false;
+        }
+    };
+    const getInputNumber = (n: number | undefined): string => (n ? n.toString() : "");
     const getDt = (epoch: number | undefined) => (!epoch ? "" : dateformat(new Date(epoch * 1000), "yyyy-MM-dd"));
     const getEpoch = (date: string) => {
         if (!date || date.trim() === "") return undefined;
@@ -93,17 +101,27 @@ function NavigationBar(props: NavigationProps) {
                                     type="date"
                                     value={getDt(filter.timestamp?.gt)}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                                        const value = e.currentTarget.value;
+                                        const value = getEpoch(e.currentTarget.value);
                                         setFilter({
                                             ...filter,
-                                            timestamp: { ...filter.timestamp, gt: getEpoch(value) },
+                                            timestamp: { ...filter.timestamp, gt: value },
                                         });
                                     }}
                                 />
                             </Col>
                             <Col>
                                 <Form.Label>Until</Form.Label>
-                                <Form.Control type="date" value={getDt(filter.timestamp?.lt)} />
+                                <Form.Control
+                                    type="date"
+                                    value={getDt(filter.timestamp?.lt)}
+                                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                        const value = getEpoch(e.currentTarget.value);
+                                        setFilter({
+                                            ...filter,
+                                            timestamp: { ...filter.timestamp, lt: value },
+                                        });
+                                    }}
+                                />
                             </Col>
                         </Form.Row>
                     </Form.Group>
@@ -111,10 +129,36 @@ function NavigationBar(props: NavigationProps) {
                         <Form.Label>Z-Score</Form.Label>
                         <Form.Row>
                             <Col>
-                                <Form.Control type="number" placeholder="Minimum" value={filter.zScore?.gt} />
+                                <Form.Control
+                                    type="number"
+                                    placeholder="Minimum"
+                                    value={getInputNumber(filter.zScore?.gt)}
+                                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                        let value = parseInt(e.currentTarget.value);
+                                        if (value < -5) value = -5;
+                                        else if (value > 5) value = 5;
+                                        setFilter({
+                                            ...filter,
+                                            zScore: { ...filter.zScore, gt: value },
+                                        });
+                                    }}
+                                />
                             </Col>
                             <Col>
-                                <Form.Control type="number" placeholder="Maximum" value={filter.zScore?.lt} />
+                                <Form.Control
+                                    type="number"
+                                    placeholder="Maximum"
+                                    value={getInputNumber(filter.zScore?.lt)}
+                                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                        let value = parseInt(e.currentTarget.value);
+                                        if (value < -5) value = -5;
+                                        else if (value > 5) value = 5;
+                                        setFilter({
+                                            ...filter,
+                                            zScore: { ...filter.zScore, lt: value },
+                                        });
+                                    }}
+                                />
                             </Col>
                         </Form.Row>
                     </Form.Group>
@@ -122,10 +166,34 @@ function NavigationBar(props: NavigationProps) {
                         <Form.Label>Score</Form.Label>
                         <Form.Row>
                             <Col>
-                                <Form.Control type="number" placeholder="Minimum" value={filter.score?.gt} />
+                                <Form.Control
+                                    type="number"
+                                    placeholder="Minimum"
+                                    value={getInputNumber(filter.score?.gt)}
+                                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                        let value = parseInt(e.currentTarget.value);
+                                        if (value < 0) value = 0;
+                                        setFilter({
+                                            ...filter,
+                                            score: { ...filter.score, gt: value },
+                                        });
+                                    }}
+                                />
                             </Col>
                             <Col>
-                                <Form.Control type="number" placeholder="Maximum" value={filter.score?.lt} />
+                                <Form.Control
+                                    type="number"
+                                    placeholder="Maximum"
+                                    value={getInputNumber(filter.score?.lt)}
+                                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                        let value = parseInt(e.currentTarget.value);
+                                        if (value < 1) value = 1;
+                                        setFilter({
+                                            ...filter,
+                                            score: { ...filter.score, lt: value },
+                                        });
+                                    }}
+                                />
                             </Col>
                         </Form.Row>
                     </Form.Group>
@@ -133,11 +201,36 @@ function NavigationBar(props: NavigationProps) {
                         <Form.Row>
                             <Col>
                                 <Form.Label>Title (regex)</Form.Label>
-                                <Form.Control type="text" value={filter.title?.regex} />
+                                <Form.Control
+                                    type="text"
+                                    value={filter.title?.regex || ""}
+                                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                        let value = e.currentTarget.value;
+                                        if (!value || !validRegExp(value)) setFilter({ ...filter, title: undefined });
+                                        else {
+                                            value = value.trim();
+                                            setFilter({
+                                                ...filter,
+                                                title: { regex: value, not: false },
+                                            });
+                                        }
+                                    }}
+                                />
                             </Col>
                             <Col>
                                 <Form.Label>URL (regex)</Form.Label>
-                                <Form.Control type="text" value={filter.url?.regex} />
+                                <Form.Control
+                                    type="text"
+                                    value={filter.url?.regex || ""}
+                                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                        let value = e.currentTarget.value;
+                                        if (!validRegExp(value)) value = "";
+                                        setFilter({
+                                            ...filter,
+                                            url: value.trim() ? { regex: value.trim(), not: false } : undefined,
+                                        });
+                                    }}
+                                />
                             </Col>
                         </Form.Row>
                     </Form.Group>
@@ -149,7 +242,25 @@ function NavigationBar(props: NavigationProps) {
                                     as="select"
                                     custom
                                     value={(filter.sort?.length || 0) > 0 ? filter.sort![0].sort : ""}
+                                    onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+                                        const value = e.currentTarget.value;
+                                        if (!value) {
+                                            if (!filter.sort) return;
+                                            setFilter({ ...filter, sort: undefined });
+                                            return;
+                                        }
+
+                                        if (value === "timestamp" || value === "score" || value === "stars") {
+                                            const firstSort = { sort: value, asc: false } as StoryRankingSort;
+                                            if (!filter.sort) filter.sort = [firstSort];
+                                            else filter.sort[0] = firstSort;
+                                            setFilter({
+                                                ...filter,
+                                            });
+                                        }
+                                    }}
                                 >
+                                    <option></option>
                                     <option>timestamp</option>
                                     <option>score</option>
                                     <option>stars</option>
@@ -161,7 +272,25 @@ function NavigationBar(props: NavigationProps) {
                                     as="select"
                                     custom
                                     value={(filter.sort?.length || 0) > 1 ? filter.sort![1].sort : ""}
+                                    disabled={!filter.sort || filter.sort.length <= 0}
+                                    onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+                                        const value = e.currentTarget.value;
+                                        if (!filter.sort || filter.sort.length <= 0) return;
+
+                                        if (!value) {
+                                            setFilter({ ...filter, sort: [filter.sort[0]] });
+                                            return;
+                                        }
+
+                                        if (value === "timestamp" || value === "score" || value === "stars") {
+                                            const secondSort = { sort: value, asc: false } as StoryRankingSort;
+                                            if (filter.sort.length === 1) filter.sort.push(secondSort);
+                                            else if (filter.sort.length === 2) filter.sort[1] = secondSort;
+                                            setFilter({ ...filter });
+                                        }
+                                    }}
                                 >
+                                    <option></option>
                                     <option>timestamp</option>
                                     <option>score</option>
                                     <option>stars</option>
@@ -209,7 +338,7 @@ function NavigationBar(props: NavigationProps) {
             <Modal show={showSettings} onHide={handleHideSettings}>
                 <Modal.Body>
                     <Form.Group controlId="displayDateAs">
-                        <Form.Label>Display Date As</Form.Label>
+                        <Form.Label>Display Date As: distance, date, datetime, custom</Form.Label>
                         <Form.Control
                             type="text"
                             placeholder="distance"
