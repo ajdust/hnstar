@@ -271,7 +271,7 @@ struct StoryRankingFilter {
     sort: Option<Vec<StoryRankingSort>>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Serialize)]
 struct GetStory {
     #[serde(rename="storyId")]
     story_id: i64,
@@ -283,6 +283,8 @@ struct GetStory {
     descendants: i32,
     stars: Option<i32>,
     flags: Option<i32>,
+    #[serde(rename="fullCount")]
+    full_count: i32
 }
 
 impl From<&tokio_postgres::row::Row> for GetStory {
@@ -296,6 +298,7 @@ impl From<&tokio_postgres::row::Row> for GetStory {
         let descendants = row.get(6);
         let stars = row.get(7);
         let flags = row.get(8);
+        let full_count = row.get(9);
         GetStory {
             story_id,
             score,
@@ -307,6 +310,7 @@ impl From<&tokio_postgres::row::Row> for GetStory {
             descendants,
             stars,
             flags,
+            full_count
         }
     }
 }
@@ -364,7 +368,9 @@ fn get_query<'a>(model: &StoryRankingFilter, user_id: i32) -> Result<QueryParame
         ), scored_stories as (
             select * from hnstar.story, stats
         )
-        select s.story_id, s.score, s.timestamp, s.title, s.url, s.status, s.descendants, r.stars, r.flags
+        select s.story_id, s.score, s.timestamp, s.title, s.url
+            , s.status, s.descendants, r.stars, r.flags
+            , cast(count(*) over() as integer) as full_count
         from scored_stories s
         left join hnstar.story_user_rank r
             on r.story_id = s.story_id and r.user_main_id = $1

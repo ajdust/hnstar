@@ -11,6 +11,7 @@ export interface Story {
     stars: number | null;
     flags: number | null;
     key: number;
+    fullCount: number;
 }
 
 export interface IntFilter {

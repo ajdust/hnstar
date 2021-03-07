@@ -62,9 +62,10 @@ function PageContent(props: PageContentProps) {
     };
 
     // Pagination
-    let active = page.number;
-    let items = [];
-    if (active >= 4) {
+    const active = page.number;
+    const items = [];
+    const pageCount = Math.ceil((stories.length ? stories[0].fullCount : 0) / page.size) - 1;
+    if (pageCount > 0 && active >= 4) {
         items.push(
             <Pagination.Item key={0} onClick={() => onClickPage(0)}>
                 &lt;&lt;
@@ -75,7 +76,7 @@ function PageContent(props: PageContentProps) {
                 &lt;
             </Pagination.Item>
         );
-        for (let number = active - 1; number <= active + 1; number++) {
+        for (let number = active - 1; number <= active + 1 && number <= pageCount; number++) {
             items.push(
                 <Pagination.Item key={number} active={number === active} onClick={() => onClickPage(number)}>
                     {number}
@@ -83,7 +84,7 @@ function PageContent(props: PageContentProps) {
             );
         }
     } else {
-        for (let number = 0; number <= 4; number++) {
+        for (let number = 0; number <= 4 && number <= pageCount; number++) {
             items.push(
                 <Pagination.Item key={number} active={number === active} onClick={() => onClickPage(number)}>
                     {number}
@@ -92,11 +93,13 @@ function PageContent(props: PageContentProps) {
         }
     }
 
-    items.push(
-        <Pagination.Item key="next" onClick={() => onClickPage(active + 1)}>
-            &gt;
-        </Pagination.Item>
-    );
+    if (active < pageCount) {
+        items.push(
+            <Pagination.Item key="next" onClick={() => onClickPage(active + 1)}>
+                &gt;
+            </Pagination.Item>
+        );
+    }
 
     const pagination = (
         <div className="entry row pl-4 pr-4 mt-3">
