@@ -4,6 +4,7 @@ import PageContent from "./PageContent";
 import { getStoriesRequest, Story, StoryRankingFilter, validateStory } from "./ApiStories";
 import { useEffect, useState } from "react";
 import { AppState } from "./AppState";
+import { addDays, addMonths } from "date-fns";
 
 function getFilterFromUrl(): StoryRankingFilter {
     const sp = new URL(window.location.toString()).searchParams;
@@ -42,6 +43,7 @@ function setFilterToUrl(filter: StoryRankingFilter) {
 
 interface StickySettings {
     dateDisplay?: string;
+    dateRange?: "custom" | "24-hours" | "3-days" | "week" | "month";
     zScore?: string;
     sort?: string;
 }
@@ -82,6 +84,7 @@ function App() {
     const [appState, setAppState] = useState({
         stories: [],
         dateDisplay: stickySettings.dateDisplay || "distance",
+        dateRange: stickySettings.dateRange || "week",
         filter: defaultFilter,
     } as AppState);
 
@@ -90,10 +93,39 @@ function App() {
         setAppState({ ...appState, filter: { ...appState.filter, pageSize: pageSize, pageNumber: pageNumber } });
     const setDateDisplay = (dateDisplay: string) => {
         setAppState({ ...appState, dateDisplay });
-
         const ss = getStickySettings();
         ss.dateDisplay = dateDisplay;
         setStickySettings(ss);
+    };
+    const setDateRange = (dateRange: "custom" | "24-hours" | "3-days" | "week" | "month") => {
+        const ss = getStickySettings();
+        ss.dateRange = dateRange;
+        setStickySettings(ss);
+
+        if (dateRange === "custom") {
+            setAppState({ ...appState, dateRange: dateRange });
+            return;
+        }
+
+        const now = new Date();
+        let thenMs = null;
+
+        if (dateRange === "24-hours") {
+            thenMs = Math.floor(addDays(now, -1).getTime() / 1000);
+        } else if (dateRange === "3-days") {
+            thenMs = Math.floor(addDays(now, -3).getTime() / 1000);
+        } else if (dateRange === "week") {
+            thenMs = Math.floor(addDays(now, -7).getTime() / 1000);
+        } else if (dateRange === "month") {
+            thenMs = Math.floor(addMonths(now, -1).getTime() / 1000);
+        }
+
+        if (!thenMs) return;
+        setAppState({
+            ...appState,
+            dateRange: dateRange,
+            filter: { ...appState.filter, timestamp: { gt: thenMs } },
+        });
     };
 
     useEffect(() => {
@@ -142,6 +174,8 @@ function App() {
             <NavigationBar
                 dateDisplay={appState.dateDisplay}
                 setDateDisplay={setDateDisplay}
+                dateRange={appState.dateRange}
+                setDateRange={setDateRange}
                 filter={appState.filter}
                 setFilter={setFilter}
             />
