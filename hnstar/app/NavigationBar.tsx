@@ -27,6 +27,8 @@ function NavigationBar(props: NavigationProps) {
     const handleHideSettings = () => setShowSettings(false);
     const handleShowSettings = () => setShowSettings(true);
 
+    const [search, setSearch] = useState(filter.title?.regex || "");
+
     const validRegExp = (regex: string) => {
         try {
             return new RegExp(regex) ? true : false;
@@ -60,7 +62,28 @@ function NavigationBar(props: NavigationProps) {
                     </Nav>
 
                     <InputGroup className="mr-auto" style={{ maxWidth: "25rem" }}>
-                        <FormControl type="text" placeholder="Search" />
+                        <FormControl
+                            type="text"
+                            placeholder="Search"
+                            value={search}
+                            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                const value = e.currentTarget.value;
+                                setSearch(value);
+                                if (value && validRegExp(value)) {
+                                    setFilter({
+                                        ...filter,
+                                        title: { regex: value, not: false },
+                                        url: { regex: value, not: false },
+                                    });
+                                } else {
+                                    setFilter({
+                                        ...filter,
+                                        title: undefined,
+                                        url: undefined,
+                                    });
+                                }
+                            }}
+                        />
                         <InputGroup.Append>
                             <Button type="button" variant="outline-success">
                                 Search
@@ -210,6 +233,7 @@ function NavigationBar(props: NavigationProps) {
                                         let value = e.currentTarget.value;
                                         if (!value || !validRegExp(value)) setFilter({ ...filter, title: undefined });
                                         else {
+                                            setSearch("");
                                             value = value.trim();
                                             setFilter({
                                                 ...filter,
@@ -226,11 +250,14 @@ function NavigationBar(props: NavigationProps) {
                                     value={filter.url?.regex || ""}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                         let value = e.currentTarget.value;
-                                        if (!validRegExp(value)) value = "";
-                                        setFilter({
-                                            ...filter,
-                                            url: value.trim() ? { regex: value.trim(), not: false } : undefined,
-                                        });
+                                        if (!value || !validRegExp(value)) setFilter({ ...filter, url: undefined });
+                                        else {
+                                            setSearch("");
+                                            setFilter({
+                                                ...filter,
+                                                url: value.trim() ? { regex: value.trim(), not: false } : undefined,
+                                            });
+                                        }
                                     }}
                                 />
                             </Col>
