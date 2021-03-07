@@ -188,16 +188,6 @@ function App() {
                 setFilter={setFilter}
                 loading={appState.loading}
             />
-            {/*<div className="progress">*/}
-            {/*    <div*/}
-            {/*        className="progress-bar progress-bar-striped progress-bar-animated"*/}
-            {/*        role="progressbar"*/}
-            {/*        ariaValuenow="100"*/}
-            {/*        ariaValuemin="0"*/}
-            {/*        ariaValuemax="100"*/}
-            {/*        style={{ width: "100%", backgroundColor: "grey" }}*/}
-            {/*    ></div>*/}
-            {/*</div>*/}
             <ProgressBar className={"gray-progress-bar"} animated={appState.loading} now={100} />
             <PageContent
                 stories={appState.stories}
