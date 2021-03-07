@@ -5,6 +5,7 @@ import { getStoriesRequest, Story, StoryRankingFilter, validateStory } from "./A
 import { useEffect, useState } from "react";
 import { AppState } from "./AppState";
 import { addDays, addMonths } from "date-fns";
+import { ProgressBar } from "react-bootstrap";
 
 function getFilterFromUrl(): StoryRankingFilter {
     const sp = new URL(window.location.toString()).searchParams;
@@ -86,6 +87,7 @@ function App() {
         dateDisplay: stickySettings.dateDisplay || "distance",
         dateRange: stickySettings.dateRange || "week",
         filter: defaultFilter,
+        loading: false,
     } as AppState);
 
     const setFilter = (filter: StoryRankingFilter) => setAppState({ ...appState, filter });
@@ -131,27 +133,33 @@ function App() {
     useEffect(() => {
         const getStories = async () => {
             const request = getStoriesRequest(appState.filter);
-            const response = await fetch(request);
-            if (response.status !== 200) {
-                console.warn(response);
-                return;
-            }
-
-            const rawStories = (await response.json()) as Story[];
-            const stories: Story[] = [];
-            for (const story of rawStories) {
-                const error = validateStory(story);
-                if (error) {
-                    console.warn(error, story);
+            try {
+                const response = await fetch(request);
+                if (response.status !== 200) {
+                    console.warn(response);
                     return;
                 }
 
-                stories.push(story);
-            }
+                const rawStories = (await response.json()) as Story[];
+                const stories: Story[] = [];
+                for (const story of rawStories) {
+                    const error = validateStory(story);
+                    if (error) {
+                        console.warn(error, story);
+                        return;
+                    }
 
-            setAppState({ ...appState, stories });
+                    stories.push(story);
+                }
+
+                setAppState({ ...appState, stories, loading: false });
+            } catch (e) {
+                console.error(e);
+                setAppState({ ...appState, stories: [], loading: false });
+            }
         };
 
+        setAppState({ ...appState, loading: true });
         getStories().then(() => {
             window.scrollTo(0, 0);
             // Set filter to URL
@@ -178,12 +186,25 @@ function App() {
                 setDateRange={setDateRange}
                 filter={appState.filter}
                 setFilter={setFilter}
+                loading={appState.loading}
             />
+            {/*<div className="progress">*/}
+            {/*    <div*/}
+            {/*        className="progress-bar progress-bar-striped progress-bar-animated"*/}
+            {/*        role="progressbar"*/}
+            {/*        ariaValuenow="100"*/}
+            {/*        ariaValuemin="0"*/}
+            {/*        ariaValuemax="100"*/}
+            {/*        style={{ width: "100%", backgroundColor: "grey" }}*/}
+            {/*    ></div>*/}
+            {/*</div>*/}
+            <ProgressBar className={"gray-progress-bar"} animated={appState.loading} now={100} />
             <PageContent
                 stories={appState.stories}
                 page={{ size: appState.filter.pageSize, number: appState.filter.pageNumber }}
                 dateDisplay={appState.dateDisplay}
                 setPage={setPage}
+                loading={appState.loading}
             />
         </div>
     );

@@ -37,3 +37,16 @@ ul.entries {
     color: #999;
     font-size: 12px;
 }
+
+.progress.gray-progress-bar {
+    height: 6px;
+}
+
+.progress.gray-progress-bar .progress-bar {
+    background-color: #d9d9d9;
+    height: 6px;
+}
+
+.progress.gray-progress-bar .progress-bar.progress-bar-animated {
+    background-color: #a5a5a5;
+}

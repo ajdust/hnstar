@@ -8,10 +8,11 @@ interface PageContentProps {
     page: { size: number; number: number };
     setPage: (pageSize: number, pageNumber: number) => void;
     dateDisplay: string;
+    loading: boolean;
 }
 
 function PageContent(props: PageContentProps) {
-    const { stories, dateDisplay, page, setPage } = props;
+    const { stories, dateDisplay, page, setPage, loading } = props;
     const hnUrl = (id: number) => `https://news.ycombinator.com/item?id=${id}`;
     const urlSource = (url: string) => {
         try {
@@ -67,18 +68,23 @@ function PageContent(props: PageContentProps) {
     const pageCount = Math.ceil((stories.length ? stories[0].fullCount : 0) / page.size) - 1;
     if (pageCount > 0 && active >= 4) {
         items.push(
-            <Pagination.Item key={0} onClick={() => onClickPage(0)}>
+            <Pagination.Item key={0} onClick={() => onClickPage(0)} disabled={loading}>
                 &lt;&lt;
             </Pagination.Item>
         );
         items.push(
-            <Pagination.Item key={"previous"} onClick={() => onClickPage(active - 1)}>
+            <Pagination.Item key={"previous"} onClick={() => onClickPage(active - 1)} disabled={loading}>
                 &lt;
             </Pagination.Item>
         );
         for (let number = active - 1; number <= active + 1 && number <= pageCount; number++) {
             items.push(
-                <Pagination.Item key={number} active={number === active} onClick={() => onClickPage(number)}>
+                <Pagination.Item
+                    key={number}
+                    active={number === active}
+                    onClick={() => onClickPage(number)}
+                    disabled={loading}
+                >
                     {number}
                 </Pagination.Item>
             );
@@ -86,7 +92,12 @@ function PageContent(props: PageContentProps) {
     } else {
         for (let number = 0; number <= 4 && number <= pageCount; number++) {
             items.push(
-                <Pagination.Item key={number} active={number === active} onClick={() => onClickPage(number)}>
+                <Pagination.Item
+                    key={number}
+                    active={number === active}
+                    onClick={() => onClickPage(number)}
+                    disabled={loading}
+                >
                     {number}
                 </Pagination.Item>
             );
@@ -95,7 +106,7 @@ function PageContent(props: PageContentProps) {
 
     if (active < pageCount) {
         items.push(
-            <Pagination.Item key="next" onClick={() => onClickPage(active + 1)}>
+            <Pagination.Item key="next" onClick={() => onClickPage(active + 1)} disabled={loading}>
                 &gt;
             </Pagination.Item>
         );

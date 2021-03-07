@@ -11,10 +11,11 @@ interface NavigationProps {
     setDateDisplay: (dateDisplay: string) => void;
     dateRange: string;
     setDateRange: (dateRange: "custom" | "24-hours" | "3-days" | "week" | "month") => void;
+    loading: boolean;
 }
 
 function NavigationBar(props: NavigationProps) {
-    const { filter, setFilter, dateDisplay, setDateDisplay, dateRange, setDateRange } = props;
+    const { filter, setFilter, dateDisplay, setDateDisplay, dateRange, setDateRange, loading } = props;
     // const [showSignIn, setShowSignIn] = useState(false);
     // const handleHideSignIn = () => setShowSignIn(false);
     // const handleShowSignIn = () => setShowSignIn(true);
@@ -65,6 +66,7 @@ function NavigationBar(props: NavigationProps) {
                         <FormControl
                             type="text"
                             placeholder="Search"
+                            disabled={loading}
                             value={search}
                             onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                 const value = e.currentTarget.value;
@@ -124,6 +126,7 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Label>Since</Form.Label>
                                 <Form.Control
                                     type="date"
+                                    disabled={loading}
                                     value={getDt(filter.timestamp?.gt)}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                         // TODO: set "custom" dateRange on user input
@@ -139,6 +142,7 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Label>Until</Form.Label>
                                 <Form.Control
                                     type="date"
+                                    disabled={loading}
                                     value={getDt(filter.timestamp?.lt)}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                         // TODO: set "custom" dateRange on user input
@@ -162,6 +166,7 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Control
                                     as="select"
                                     custom
+                                    disabled={loading}
                                     value={dateRange}
                                     style={{ width: "65%" }}
                                     onChange={(e: ChangeEvent<HTMLSelectElement>) => {
@@ -193,6 +198,7 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Control
                                     type="number"
                                     placeholder="Minimum Score"
+                                    disabled={loading}
                                     value={getInputNumber(filter.score?.gt)}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                         let value = parseInt(e.currentTarget.value);
@@ -208,6 +214,7 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Control
                                     type="number"
                                     placeholder="Minimum z-Score"
+                                    disabled={loading}
                                     value={getInputNumber(filter.zScore?.gt)}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                         let value = parseInt(e.currentTarget.value);
@@ -228,11 +235,14 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Label>Title (regex)</Form.Label>
                                 <Form.Control
                                     type="text"
+                                    disabled={loading}
                                     value={filter.title?.regex || ""}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                         let value = e.currentTarget.value;
-                                        if (!value || !validRegExp(value)) setFilter({ ...filter, title: undefined });
-                                        else {
+                                        if (!value || !validRegExp(value)) {
+                                            setSearch("");
+                                            setFilter({ ...filter, title: undefined });
+                                        } else {
                                             setSearch("");
                                             value = value.trim();
                                             setFilter({
@@ -247,11 +257,14 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Label>URL (regex)</Form.Label>
                                 <Form.Control
                                     type="text"
+                                    disabled={loading}
                                     value={filter.url?.regex || ""}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                         let value = e.currentTarget.value;
-                                        if (!value || !validRegExp(value)) setFilter({ ...filter, url: undefined });
-                                        else {
+                                        if (!value || !validRegExp(value)) {
+                                            setSearch("");
+                                            setFilter({ ...filter, url: undefined });
+                                        } else {
                                             setSearch("");
                                             setFilter({
                                                 ...filter,
@@ -270,6 +283,7 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Control
                                     as="select"
                                     custom
+                                    disabled={loading}
                                     value={(filter.sort?.length || 0) > 0 ? filter.sort![0].sort : "timestamp"}
                                     onChange={(e: ChangeEvent<HTMLSelectElement>) => {
                                         const value = e.currentTarget.value;
@@ -302,6 +316,7 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Label>Page Size</Form.Label>
                                 <Form.Control
                                     type="number"
+                                    disabled={loading}
                                     value={filter.pageSize}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                         const value = e.currentTarget.value;
@@ -315,6 +330,7 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Label>Page Number</Form.Label>
                                 <Form.Control
                                     type="number"
+                                    disabled={loading}
                                     value={filter.pageNumber}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                         const value = e.currentTarget.value;
@@ -340,6 +356,7 @@ function NavigationBar(props: NavigationProps) {
                         <Form.Control
                             type="text"
                             placeholder="distance"
+                            disabled={loading}
                             value={dateDisplay}
                             onChange={(e: React.FormEvent<HTMLInputElement>) => setDateDisplay(e.currentTarget.value)}
                         />
