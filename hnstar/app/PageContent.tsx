@@ -118,13 +118,24 @@ function PageContent(props: PageContentProps) {
                     {stories.map((story) => {
                         return (
                             <div key={story.key} className="entry row pl-4 pr-4">
-                                <a id={`hn-${story.storyId}`} className="col-1 pr-1 story" href={hnUrl(story.storyId)}>
+                                <a
+                                    id={`hn-${story.storyId}`}
+                                    className="col-1 pr-1 story"
+                                    href={hnUrl(story.storyId)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
                                     <div className="row">
                                         <div className="comments col">{story.descendants}</div>
                                         <div className="points homepage col pl-0">{story.score}</div>
                                     </div>
                                 </a>
-                                <a className="link col-11 story pl-1" href={story.url}>
+                                <a
+                                    className="link col-11 story pl-1"
+                                    href={story.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
                                     <span className="ml-1">{story.title + " "}</span>
                                     <span className="source">
                                         {urlSource(story.url)} {distance(story.timestamp)}
