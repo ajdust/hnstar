@@ -390,31 +390,40 @@ fn get_query<'a>(model: &StoryRankingFilter, user_id: i32) -> Result<QueryParame
         where_query.push(format!("timestamp < ${}", parameters.len()));
     }
 
-    if let Some(title) = model.title.clone() {
-        parameters.push(SqlParameter::from(title.regex));
-        if title.not {
-            where_query.push(format!("title !~* ${}", parameters.len()));
-        } else {
-            where_query.push(format!("title ~* ${}", parameters.len()));
-        }
-    }
+    // Combine title, comment, and url filters with OR instead of AND
+    if model.title.is_some() || model.comment.is_some() || model.url.is_some() {
+        let mut sub_where_query: Vec<String> = vec![String::from("")];
 
-    if let Some(comment) = model.comment.clone() {
-        parameters.push(SqlParameter::from(comment.regex));
-        if comment.not {
-            where_query.push(format!("comment !~* ${}", parameters.len()));
-        } else {
-            where_query.push(format!("comment ~* ${}", parameters.len()));
+        if let Some(title) = model.title.clone() {
+            parameters.push(SqlParameter::from(title.regex));
+            if title.not {
+                sub_where_query.push(format!("title !~* ${}", parameters.len()));
+            } else {
+                sub_where_query.push(format!("title ~* ${}", parameters.len()));
+            }
         }
-    }
 
-    if let Some(url) = model.url.clone() {
-        parameters.push(SqlParameter::from(url.regex));
-        if url.not {
-            where_query.push(format!("url !~* ${}", parameters.len()));
-        } else {
-            where_query.push(format!("url ~* ${}", parameters.len()));
+        if let Some(comment) = model.comment.clone() {
+            parameters.push(SqlParameter::from(comment.regex));
+            if comment.not {
+                sub_where_query.push(format!("comment !~* ${}", parameters.len()));
+            } else {
+                sub_where_query.push(format!("comment ~* ${}", parameters.len()));
+            }
         }
+
+        if let Some(url) = model.url.clone() {
+            parameters.push(SqlParameter::from(url.regex));
+            if url.not {
+                sub_where_query.push(format!("url !~* ${}", parameters.len()));
+            } else {
+                sub_where_query.push(format!("url ~* ${}", parameters.len()));
+            }
+        }
+
+        sub_where_query.retain(|v| !v.is_empty());
+        let sub_where_clause = format!("({})", sub_where_query.join(" or "));
+        where_query.push(sub_where_clause);
     }
 
     if let Some(score) = &model.score {
