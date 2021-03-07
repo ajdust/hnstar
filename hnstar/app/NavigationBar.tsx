@@ -2,7 +2,7 @@ import * as React from "react";
 import { Navbar, Nav, Modal, Button, Form, FormControl, Col, InputGroup } from "react-bootstrap";
 import { ChangeEvent, useState } from "react";
 import { StoryRankingFilter, StoryRankingSort } from "./ApiStories";
-import { format as dateformat, addMinutes } from "date-fns";
+import { format as dateformat, addMinutes, addMonths, addDays } from "date-fns";
 
 interface NavigationProps {
     filter: StoryRankingFilter;
@@ -39,13 +39,34 @@ function NavigationBar(props: NavigationProps) {
     };
     const getInputNumber = (n: number | undefined): string => (n ? n.toString() : "");
     const getDt = (epoch: number | undefined) => (!epoch ? "" : dateformat(new Date(epoch * 1000), "yyyy-MM-dd"));
-    const getEpoch = (date: string) => {
+    const getEpoch = (date: string): number | undefined => {
         if (!date || date.trim() === "") return undefined;
         let dt = new Date(date);
         // undo timezone adaption
         dt = addMinutes(dt, dt.getTimezoneOffset());
 
-        return date.trim() === "" ? undefined : dt.getTime() / 1000;
+        return date.trim() === "" ? undefined : Math.ceil(dt.getTime() / 1000);
+    };
+
+    const setAdjacentRange = (previous: "PREVIOUS" | "NEXT") => {
+        if (!filter.timestamp || !filter.timestamp.gt) return;
+        if (!filter.timestamp.lt) filter.timestamp.lt = getEpoch(addDays(new Date(), 1).toISOString())!;
+        const { gt, lt } = filter.timestamp;
+        if (dateRange !== "month") {
+            const distance = (previous === "NEXT" ? 1 : -1) * Math.abs(lt - gt);
+            setFilter({ ...filter, timestamp: { gt: gt + distance, lt: lt + distance } });
+        } else {
+            const [gtDt, ltDt] = [new Date(getDt(gt)), new Date(getDt(lt))];
+            const add = previous === "NEXT" ? 1 : -1;
+            const [gtDtM, ltDtM] = [addMonths(gtDt, add), addMonths(ltDt, add)];
+            setFilter({
+                ...filter,
+                timestamp: {
+                    gt: getEpoch(gtDtM.toISOString())!,
+                    lt: getEpoch(ltDtM.toISOString())!,
+                },
+            });
+        }
     };
 
     return (
@@ -131,10 +152,14 @@ function NavigationBar(props: NavigationProps) {
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                         // TODO: set "custom" dateRange on user input
                                         const value = getEpoch(e.currentTarget.value);
-                                        setFilter({
-                                            ...filter,
-                                            timestamp: { ...filter.timestamp, gt: value },
-                                        });
+                                        if (value) {
+                                            setFilter({
+                                                ...filter,
+                                                timestamp: { ...filter.timestamp, gt: value },
+                                            });
+                                        } else {
+                                            setFilter({ ...filter, timestamp: undefined });
+                                        }
                                     }}
                                 />
                             </Col>
@@ -157,10 +182,20 @@ function NavigationBar(props: NavigationProps) {
                         </Form.Row>
                         <Form.Row className="pt-2">
                             <Col>
-                                <Button type="button" className="mr-1" variant="light">
+                                <Button
+                                    type="button"
+                                    className="mr-1"
+                                    variant="light"
+                                    onClick={() => setAdjacentRange("PREVIOUS")}
+                                >
                                     &lt;
                                 </Button>
-                                <Button type="button" className="mr-1" variant="light">
+                                <Button
+                                    type="button"
+                                    className="mr-1"
+                                    variant="light"
+                                    onClick={() => setAdjacentRange("NEXT")}
+                                >
                                     &gt;
                                 </Button>
                                 <Form.Control

@@ -85,7 +85,7 @@ function App() {
     const [appState, setAppState] = useState({
         stories: [],
         dateDisplay: stickySettings.dateDisplay || "distance",
-        dateRange: stickySettings.dateRange || "week",
+        dateRange: stickySettings.dateRange || "custom",
         filter: defaultFilter,
         loading: false,
     } as AppState);
