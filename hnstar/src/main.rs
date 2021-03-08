@@ -476,7 +476,6 @@ fn get_query<'a>(model: &StoryRankingFilter, user_id: i32) -> Result<QueryParame
     let where_clause = format!("where {} ", where_query.join(" and "));
 
     // sorting
-    // TODO: allow sorting by n number of days, e.g. for reddit-style daily/weekly tops
     let allowed_sorts = vec!["timestamp", "score", "stars"];
     let mut sort_query: Vec<String> = vec![];
     let default = vec![StoryRankingSort {
