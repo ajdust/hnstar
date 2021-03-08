@@ -1,7 +1,7 @@
 mod aliases;
 mod error_util;
 
-use actix_web::{get, post, App, HttpResponse, HttpRequest, HttpServer, Responder, web, error, HttpMessage};
+use actix_web::{post, App, HttpResponse, HttpRequest, HttpServer, Responder, web, error};
 use aliases::*;
 use chrono::{Utc, Duration, DateTime, NaiveDateTime};
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
@@ -9,7 +9,6 @@ use error_util::WebError;
 use std::net::ToSocketAddrs;
 use tokio_postgres::NoTls;
 use serde::{Deserialize, Serialize};
-use validator::{Validate};
 use postgres_types::ToSql;
 
 pub fn time_to_json(t: NaiveDateTime) -> String {
