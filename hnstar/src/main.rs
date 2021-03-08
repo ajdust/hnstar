@@ -565,32 +565,37 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
-    use std::path::{Path};
+    let secure = if std::env::var("PRIVATE_KEY_FILE").is_ok() ||
+        std::env::var("CERTIFICATE_FILE").is_ok() {
+        use std::path::{Path};
+        let private_key_file = std::env::var("PRIVATE_KEY_FILE")
+            .map(|v| Path::new(&v).to_owned())
+            .map_or(None, |p| if p.is_file() { Some(p) } else { None });
+        if private_key_file.is_none() {
+            println!("No PRIVATE_KEY_FILE found");
+            return Ok(());
+        }
 
-    let private_key_file = std::env::var("PRIVATE_KEY_FILE")
-        .map(|v| Path::new(&v).to_owned())
-        .map_or(None, |p| if p.is_file() { Some(p) } else { None });
-    if private_key_file.is_none() {
-        println!("No PRIVATE_KEY_FILE found");
-        return Ok(());
-    }
+        let certificate_file = std::env::var("CERTIFICATE_FILE")
+            .map(|v| Path::new(&v).to_owned())
+            .map_or(None, |p| if p.is_file() { Some(p) } else { None });
+        if certificate_file.is_none() {
+            println!("No CERTIFICATE_FILE found");
+            return Ok(());
+        }
 
-    let certificate_file = std::env::var("CERTIFICATE_FILE")
-        .map(|v| Path::new(&v).to_owned())
-        .map_or(None, |p| if p.is_file() { Some(p) } else { None });
-    if certificate_file.is_none() {
-        println!("No CERTIFICATE_FILE found");
-        return Ok(());
-    }
+        let mut tls = openssl::ssl::SslAcceptor::mozilla_intermediate(
+            openssl::ssl::SslMethod::tls()).unwrap();
+        tls.set_private_key_file(
+            Path::new(&private_key_file.unwrap()), openssl::ssl::SslFiletype::PEM).unwrap();
+        tls.set_certificate_file(
+            Path::new(&certificate_file.unwrap()), openssl::ssl::SslFiletype::PEM).unwrap();
+        Some(tls)
+    } else {
+        None
+    };
 
-    let mut tls = openssl::ssl::SslAcceptor::mozilla_intermediate(
-        openssl::ssl::SslMethod::tls()).unwrap();
-    tls.set_private_key_file(
-        Path::new(&private_key_file.unwrap()), openssl::ssl::SslFiletype::PEM).unwrap();
-    tls.set_certificate_file(
-        Path::new(&certificate_file.unwrap()), openssl::ssl::SslFiletype::PEM).unwrap();
-
-    HttpServer::new(|| {
+    let server = HttpServer::new(|| {
         let pg_url = match std::env::var("POSTGRESQL_URL") {
             Ok(pg) => pg,
             Err(e) => {
@@ -617,8 +622,12 @@ async fn main() -> std::io::Result<()> {
         let manager = Manager::from_config(config, NoTls, manager_config);
         let pool = Pool::new(manager, 30);
 
-        // TODO: convert to environment variable
-        let auth_url = String::from("https://127.0.0.1:8000");
+        let auth_url = std::env::var("MINIAUTHURE_URL").ok();
+        if auth_url.is_none() {
+            panic!("No MINIAUTHURE_URL found")
+        }
+
+        let auth_url = String::from(auth_url.unwrap());
         let auth_client = reqwest::ClientBuilder::new()
             .danger_accept_invalid_certs(true)
             .build().unwrap();
@@ -648,8 +657,16 @@ async fn main() -> std::io::Result<()> {
         } else {
             app
         }
-    }).bind_openssl(addr_port, tls)?
-        .run()
-        .await
+    });
+
+    if let Some(tls) = secure {
+        server.bind_openssl(addr_port, tls)?
+            .run()
+            .await
+    } else {
+        server.bind(addr_port)?
+            .run()
+            .await
+    }
 }
 
