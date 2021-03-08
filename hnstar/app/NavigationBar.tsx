@@ -227,7 +227,7 @@ function NavigationBar(props: NavigationProps) {
                         </Form.Row>
                     </Form.Group>
                     <Form.Group controlId="filterScore">
-                        <Form.Label>Score</Form.Label>
+                        <Form.Label>Score and z-Score</Form.Label>
                         <Form.Row>
                             <Col>
                                 <Form.Control
@@ -247,12 +247,15 @@ function NavigationBar(props: NavigationProps) {
                             </Col>
                             <Col>
                                 <Form.Control
-                                    type="number"
-                                    placeholder="Minimum z-Score"
+                                    type="text"
+                                    placeholder="Min z-Score (-5.0 to 5.0)"
                                     disabled={loading}
-                                    value={getInputNumber(filter.zScore?.gt)}
+                                    value={
+                                        filter.zScore?.gt || filter.zScore?.gt === 0 ? filter.zScore.gt.toString() : ""
+                                    }
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                                        let value = parseInt(e.currentTarget.value);
+                                        let value = parseFloat(e.currentTarget.value);
+                                        if (isNaN(value)) return;
                                         if (value < -5) value = -5;
                                         else if (value > 5) value = 5;
                                         setFilter({
