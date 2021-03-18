@@ -27,7 +27,12 @@ module.exports = {
     },
     plugins: [
         new CopyIt({
-            patterns: [{ from: "./index.html" }, { from: "./index.css" }],
+            patterns: [
+                { from: "./index.html" },
+                { from: "./index.css" },
+                { from: "./favicon48.png" },
+                { from: "./favicon196.png" },
+            ],
         }),
         new webpack.DefinePlugin({
             ENVIRONMENT: JSON.stringify(process.env.NODE_ENV),
