@@ -3,7 +3,7 @@ import NavigationBar from "./NavigationBar";
 import PageContent from "./PageContent";
 import { getStoriesRequest, Story, StoryRankingFilter, validateStory } from "./ApiStories";
 import { useEffect, useState } from "react";
-import { AppState } from "./AppState";
+import { AppState, DateDisplay, DateRange } from "./AppState";
 import { addDays, addMonths } from "date-fns";
 import { ProgressBar } from "react-bootstrap";
 
@@ -43,8 +43,8 @@ function setFilterToUrl(filter: StoryRankingFilter) {
 }
 
 interface StickySettings {
-    dateDisplay?: string;
-    dateRange?: "custom" | "24-hours" | "3-days" | "week" | "month";
+    dateDisplay?: DateDisplay;
+    dateRange?: DateRange;
     zScore?: string;
     sort?: string;
 }
@@ -58,6 +58,8 @@ function getStickySettings(): StickySettings {
             return {};
         }
     } catch (e) {
+        console.warn("sticky settings reset", e);
+        window.localStorage.setItem("sticky", "");
         return {};
     }
 }
@@ -93,33 +95,29 @@ function App() {
     const setFilter = (filter: StoryRankingFilter) => setAppState({ ...appState, filter });
     const setPage = (pageSize: number, pageNumber: number) =>
         setAppState({ ...appState, filter: { ...appState.filter, pageSize: pageSize, pageNumber: pageNumber } });
-    const setDateDisplay = (dateDisplay: string) => {
+    const setDateDisplay = (dateDisplay: DateDisplay) => {
         setAppState({ ...appState, dateDisplay });
         const ss = getStickySettings();
         ss.dateDisplay = dateDisplay;
         setStickySettings(ss);
     };
-    const setDateRange = (dateRange: "custom" | "24-hours" | "3-days" | "week" | "month") => {
+    const setDateRange = (dateRange: DateRange) => {
         const ss = getStickySettings();
         ss.dateRange = dateRange;
         setStickySettings(ss);
 
-        if (dateRange === "custom") {
+        let thenMs = null;
+        if (dateRange.of === "24-hours") {
+            thenMs = Math.floor(addDays(new Date(), -1).getTime() / 1000);
+        } else if (dateRange.of === "3-days") {
+            thenMs = Math.floor(addDays(new Date(), -3).getTime() / 1000);
+        } else if (dateRange.of === "week") {
+            thenMs = Math.floor(addDays(new Date(), -7).getTime() / 1000);
+        } else if (dateRange.of === "month") {
+            thenMs = Math.floor(addMonths(new Date(), -1).getTime() / 1000);
+        } else {
             setAppState({ ...appState, dateRange: dateRange });
             return;
-        }
-
-        const now = new Date();
-        let thenMs = null;
-
-        if (dateRange === "24-hours") {
-            thenMs = Math.floor(addDays(now, -1).getTime() / 1000);
-        } else if (dateRange === "3-days") {
-            thenMs = Math.floor(addDays(now, -3).getTime() / 1000);
-        } else if (dateRange === "week") {
-            thenMs = Math.floor(addDays(now, -7).getTime() / 1000);
-        } else if (dateRange === "month") {
-            thenMs = Math.floor(addMonths(now, -1).getTime() / 1000);
         }
 
         if (!thenMs) return;

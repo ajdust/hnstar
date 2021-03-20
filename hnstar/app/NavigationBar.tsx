@@ -1,16 +1,28 @@
 import * as React from "react";
-import { Navbar, Nav, Modal, Button, Form, FormControl, Col, InputGroup } from "react-bootstrap";
+import {
+    Navbar,
+    Nav,
+    Modal,
+    Button,
+    Form,
+    FormControl,
+    Col,
+    InputGroup,
+    ButtonGroup,
+    ToggleButton,
+} from "react-bootstrap";
 import { ChangeEvent, useState } from "react";
 import { StoryRankingFilter, StoryRankingSort } from "./ApiStories";
 import { format as dateformat, addMinutes, addMonths, addDays } from "date-fns";
+import { DateDisplay, DateRange } from "./AppState";
 
 interface NavigationProps {
     filter: StoryRankingFilter;
     setFilter: (filter: StoryRankingFilter) => void;
-    dateDisplay: string;
-    setDateDisplay: (dateDisplay: string) => void;
-    dateRange: string;
-    setDateRange: (dateRange: "custom" | "24-hours" | "3-days" | "week" | "month") => void;
+    dateDisplay: DateDisplay;
+    setDateDisplay: (dateDisplay: DateDisplay) => void;
+    dateRange: DateRange;
+    setDateRange: (dateRange: DateRange) => void;
     loading: boolean;
 }
 
@@ -30,6 +42,13 @@ function NavigationBar(props: NavigationProps) {
 
     const [search, setSearch] = useState(filter.title?.regex || "");
 
+    const [lastCustomDateDisplay, setLastCustomDateDisplay] = useState(
+        dateDisplay.of === "custom" ? dateDisplay.value : ""
+    );
+    const [lastCustomDateRange, setLastCustomDateRange] = useState(
+        dateRange.of === "custom" ? dateRange.value : { gt: undefined, lt: undefined }
+    );
+
     const validRegExp = (regex: string) => {
         try {
             return new RegExp(regex) ? true : false;
@@ -38,7 +57,8 @@ function NavigationBar(props: NavigationProps) {
         }
     };
     const getInputNumber = (n: number | undefined): string => (n ? n.toString() : "");
-    const getDt = (epoch: number | undefined) => (!epoch ? "" : dateformat(new Date(epoch * 1000), "yyyy-MM-dd"));
+    const getDt = (epoch: number | undefined): string =>
+        !epoch ? "" : dateformat(new Date(epoch * 1000), "yyyy-MM-dd");
     const getEpoch = (date: string): number | undefined => {
         if (!date || date.trim() === "") return undefined;
         let dt = new Date(date);
@@ -47,18 +67,40 @@ function NavigationBar(props: NavigationProps) {
 
         return date.trim() === "" ? undefined : Math.ceil(dt.getTime() / 1000);
     };
+    const getDateRangeLabel = (dr: string): string => {
+        if (dr === "24-hours") {
+            return "24 Hours";
+        } else if (dr === "3-days") {
+            return "3 Days";
+        } else if (dr === "week") {
+            return "Week";
+        } else if (dr === "month") {
+            return "Month";
+        } else if (dr === "custom") {
+            return "Custom";
+        } else {
+            return "Unknown";
+        }
+    };
 
-    const setAdjacentRange = (previous: "PREVIOUS" | "NEXT") => {
+    const setAdjacentRange = (previous: "previous" | "next") => {
         if (!filter.timestamp || !filter.timestamp.gt) return;
         if (!filter.timestamp.lt) filter.timestamp.lt = getEpoch(addDays(new Date(), 1).toISOString())!;
         const { gt, lt } = filter.timestamp;
-        if (dateRange !== "month") {
-            const distance = (previous === "NEXT" ? 1 : -1) * Math.abs(lt - gt);
-            setFilter({ ...filter, timestamp: { gt: gt + distance, lt: lt + distance } });
+        if (dateRange.of !== "month") {
+            const distance = (previous === "next" ? 1 : -1) * Math.abs(lt - gt);
+            const ts = { gt: gt + distance, lt: lt + distance };
+            if (ts.gt > new Date().getTime()) return;
+            setLastCustomDateRange({ gt: new Date(ts.gt * 1000), lt: new Date(ts.lt * 1000) });
+            setDateRange({ of: "custom", value: { gt: new Date(ts.gt * 1000), lt: new Date(ts.lt * 1000) } });
+            setFilter({ ...filter, timestamp: ts });
         } else {
             const [gtDt, ltDt] = [new Date(getDt(gt)), new Date(getDt(lt))];
-            const add = previous === "NEXT" ? 1 : -1;
+            const add = previous === "next" ? 1 : -1;
             const [gtDtM, ltDtM] = [addMonths(gtDt, add), addMonths(ltDt, add)];
+            if (gtDtM.getTime() > new Date().getTime()) return;
+            setLastCustomDateRange({ gt: gtDtM, lt: ltDtM });
+            setDateRange({ of: "custom", value: { gt: gtDtM, lt: ltDtM } });
             setFilter({
                 ...filter,
                 timestamp: {
@@ -147,17 +189,21 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Label>Since</Form.Label>
                                 <Form.Control
                                     type="date"
-                                    disabled={loading}
+                                    disabled={loading || dateRange.of !== "custom"}
                                     value={getDt(filter.timestamp?.gt)}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                                        // TODO: set "custom" dateRange on user input
                                         const value = getEpoch(e.currentTarget.value);
                                         if (value) {
+                                            setLastCustomDateRange({
+                                                ...lastCustomDateRange,
+                                                gt: new Date(value * 1000),
+                                            });
                                             setFilter({
                                                 ...filter,
                                                 timestamp: { ...filter.timestamp, gt: value },
                                             });
                                         } else {
+                                            setLastCustomDateRange({ ...lastCustomDateRange, gt: undefined });
                                             setFilter({ ...filter, timestamp: undefined });
                                         }
                                     }}
@@ -167,15 +213,23 @@ function NavigationBar(props: NavigationProps) {
                                 <Form.Label>Until</Form.Label>
                                 <Form.Control
                                     type="date"
-                                    disabled={loading}
+                                    disabled={loading || dateRange.of !== "custom"}
                                     value={getDt(filter.timestamp?.lt)}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                                        // TODO: set "custom" dateRange on user input
                                         const value = getEpoch(e.currentTarget.value);
-                                        setFilter({
-                                            ...filter,
-                                            timestamp: { ...filter.timestamp, lt: value },
-                                        });
+                                        if (value) {
+                                            setLastCustomDateRange({
+                                                ...lastCustomDateRange,
+                                                lt: new Date(value * 1000),
+                                            });
+                                            setFilter({
+                                                ...filter,
+                                                timestamp: { ...filter.timestamp, lt: value },
+                                            });
+                                        } else {
+                                            setLastCustomDateRange({ ...lastCustomDateRange, lt: undefined });
+                                            setFilter({ ...filter, timestamp: undefined });
+                                        }
                                     }}
                                 />
                             </Col>
@@ -186,7 +240,7 @@ function NavigationBar(props: NavigationProps) {
                                     type="button"
                                     className="mr-1"
                                     variant="light"
-                                    onClick={() => setAdjacentRange("PREVIOUS")}
+                                    onClick={() => setAdjacentRange("previous")}
                                 >
                                     &lt;
                                 </Button>
@@ -194,35 +248,37 @@ function NavigationBar(props: NavigationProps) {
                                     type="button"
                                     className="mr-1"
                                     variant="light"
-                                    onClick={() => setAdjacentRange("NEXT")}
+                                    onClick={() => setAdjacentRange("next")}
                                 >
                                     &gt;
                                 </Button>
-                                <Form.Control
-                                    as="select"
-                                    custom
-                                    disabled={loading}
-                                    value={dateRange}
-                                    style={{ width: "65%" }}
-                                    onChange={(e: ChangeEvent<HTMLSelectElement>) => {
-                                        const v = e.currentTarget.value;
-                                        if (
-                                            v === "custom" ||
-                                            v === "24-hours" ||
-                                            v === "3-days" ||
-                                            v === "week" ||
-                                            v === "month"
-                                        ) {
-                                            setDateRange(v);
-                                        }
-                                    }}
-                                >
-                                    <option value={"24-hours"}>Last 24 Hours</option>
-                                    <option value={"3-days"}>Last 3-Days</option>
-                                    <option value={"week"}>Week</option>
-                                    <option value={"month"}>Month</option>
-                                    <option value={"custom"}>Custom</option>
-                                </Form.Control>
+                                <ButtonGroup toggle>
+                                    {["24-hours", "3-days", "week", "month", "custom"].map((range, idx) => (
+                                        <ToggleButton
+                                            key={idx}
+                                            type="radio"
+                                            variant="secondary"
+                                            name="radio"
+                                            value={range}
+                                            checked={dateRange.of === range}
+                                            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                                const v = e.currentTarget.value;
+                                                if (
+                                                    v === "24-hours" ||
+                                                    v === "3-days" ||
+                                                    v === "week" ||
+                                                    v === "month"
+                                                ) {
+                                                    setDateRange({ of: v });
+                                                } else if (v === "custom") {
+                                                    setDateRange({ of: v, value: lastCustomDateRange });
+                                                }
+                                            }}
+                                        >
+                                            {getDateRangeLabel(range)}
+                                        </ToggleButton>
+                                    ))}
+                                </ButtonGroup>
                             </Col>
                         </Form.Row>
                     </Form.Group>
@@ -390,14 +446,65 @@ function NavigationBar(props: NavigationProps) {
             <Modal show={showSettings} onHide={handleHideSettings}>
                 <Modal.Body>
                     <Form.Group controlId="displayDateAs">
-                        <Form.Label>Display Date As: distance, date, datetime, custom</Form.Label>
-                        <Form.Control
-                            type="text"
-                            placeholder="distance"
-                            disabled={loading}
-                            value={dateDisplay}
-                            onChange={(e: React.FormEvent<HTMLInputElement>) => setDateDisplay(e.currentTarget.value)}
-                        />
+                        <Form.Label>Display Date</Form.Label>
+                        <br />
+                        <ButtonGroup toggle>
+                            <ToggleButton
+                                type="radio"
+                                variant="secondary"
+                                name="radio"
+                                value={"distance"}
+                                checked={dateDisplay.of === "distance"}
+                                onChange={() => setDateDisplay({ of: "distance" })}
+                            >
+                                Distance
+                            </ToggleButton>
+                            <ToggleButton
+                                type="radio"
+                                variant="secondary"
+                                name="radio"
+                                value={"datetime"}
+                                checked={dateDisplay.of === "datetime"}
+                                onChange={() => setDateDisplay({ of: "datetime" })}
+                            >
+                                Date and Time
+                            </ToggleButton>
+                            <ToggleButton
+                                type="radio"
+                                variant="secondary"
+                                name="radio"
+                                value={"date"}
+                                checked={dateDisplay.of === "date"}
+                                onChange={() => setDateDisplay({ of: "date" })}
+                            >
+                                Date
+                            </ToggleButton>
+                            <ToggleButton
+                                type="radio"
+                                variant="secondary"
+                                name="radio"
+                                value={"custom"}
+                                checked={dateDisplay.of === "custom"}
+                                onChange={() =>
+                                    setDateDisplay({ of: "custom", value: lastCustomDateDisplay || "yyyy-MM-dd" })
+                                }
+                            >
+                                Custom
+                            </ToggleButton>
+                        </ButtonGroup>
+                        {dateDisplay.of === "custom" && (
+                            <Form.Control
+                                type="text"
+                                placeholder="distance"
+                                disabled={loading}
+                                className={"mt-1"}
+                                value={dateDisplay.value || "yyyy-MM-dd"}
+                                onChange={(e: React.FormEvent<HTMLInputElement>) => {
+                                    setLastCustomDateDisplay(e.currentTarget.value);
+                                    setDateDisplay({ of: "custom", value: e.currentTarget.value });
+                                }}
+                            />
+                        )}
                     </Form.Group>
                 </Modal.Body>
                 <Modal.Footer>

@@ -2,12 +2,13 @@ import * as React from "react";
 import { Story } from "./ApiStories";
 import { format as formatDate, formatDistance } from "date-fns";
 import { Pagination } from "react-bootstrap";
+import { DateDisplay } from "./AppState";
 
 interface PageContentProps {
     stories: Story[];
     page: { size: number; number: number };
     setPage: (pageSize: number, pageNumber: number) => void;
-    dateDisplay: string;
+    dateDisplay: DateDisplay;
     loading: boolean;
 }
 
@@ -34,16 +35,16 @@ function PageContent(props: PageContentProps) {
     const now = new Date();
     const distance = (ts: number) => {
         const dt = new Date(ts * 1000);
-        if (!dateDisplay || dateDisplay === "distance") {
+        if (!dateDisplay || dateDisplay.of === "distance") {
             const dist = formatDistance(dt, now);
             return `${dist} ago`;
-        } else if (dateDisplay === "date") {
+        } else if (dateDisplay.of === "date") {
             if (dt.getFullYear() === now.getFullYear()) {
                 return formatDate(dt, "M-dd");
             } else {
                 return formatDate(dt, "yyyy-MM-dd");
             }
-        } else if (dateDisplay === "datetime") {
+        } else if (dateDisplay.of === "datetime") {
             if (dt.getFullYear() === now.getFullYear()) {
                 if (dt.getMonth() === now.getMonth() && dt.getDate() === now.getDate()) {
                     return formatDate(dt, "HH:mm");
@@ -55,7 +56,7 @@ function PageContent(props: PageContentProps) {
             }
         } else {
             try {
-                return formatDate(dt, dateDisplay);
+                return formatDate(dt, dateDisplay.value);
             } catch {
                 return formatDistance(dt, now);
             }
