@@ -44,6 +44,7 @@ function setFilterToUrl(filter: StoryRankingFilter) {
 interface StickySettings {
     dateDisplay?: DateDisplay;
     dateRange?: DateRange;
+    darkTheme?: boolean;
     zScore?: string;
     sort?: string;
 }
@@ -92,6 +93,23 @@ class App extends React.Component<any, AppState> {
         setStickySettings(ss);
         return new Promise<void>((resolve, _) => {
             this.setState({ ...this.state, dateDisplay }, resolve);
+        });
+    };
+
+    setDarkTheme = (darkTheme: boolean): Promise<void> => {
+        console.log("settting", darkTheme);
+        const ss = getStickySettings();
+        ss.darkTheme = darkTheme;
+        setStickySettings(ss);
+        if (darkTheme) {
+            // @ts-ignore
+            window.DARK_THEME.enable();
+        } else {
+            // @ts-ignore
+            window.DARK_THEME.disable();
+        }
+        return new Promise<void>((resolve, _) => {
+            this.setState({ ...this.state, darkTheme }, resolve);
         });
     };
 
@@ -172,9 +190,15 @@ class App extends React.Component<any, AppState> {
             stories: [],
             dateDisplay: stickySettings.dateDisplay || { of: "distance" },
             dateRange: stickySettings.dateRange || { of: "week" },
+            darkTheme: stickySettings.darkTheme || false,
             filter: defaultFilter,
             loading: true,
         };
+
+        if (this.state.darkTheme) {
+            // @ts-ignore
+            window.DARK_THEME.enable();
+        }
 
         this.getStories().then(this.afterGetStories);
     }
@@ -199,6 +223,8 @@ class App extends React.Component<any, AppState> {
                     filter={this.state.filter}
                     setFilter={this.setFilter}
                     loading={this.state.loading}
+                    darkTheme={this.state.darkTheme}
+                    setDarkTheme={this.setDarkTheme}
                 />
                 <ProgressBar className={"gray-progress-bar"} animated={this.state.loading} now={100} />
                 <PageContent

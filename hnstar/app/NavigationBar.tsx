@@ -24,6 +24,8 @@ interface NavigationProps {
     dateRange: DateRange;
     setDateRange: (dateRange: DateRange) => Promise<void>;
     loading: boolean;
+    darkTheme: boolean;
+    setDarkTheme: (darkTheme: boolean) => Promise<void>;
 }
 
 interface NavigationState {
@@ -122,8 +124,8 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
     getNavbar() {
         const [state, props] = [this.state, this.props];
         return (
-            <Navbar bg="light" expand="sm">
-                <Navbar.Brand href="#">har</Navbar.Brand>
+            <Navbar expand="sm">
+                <Navbar.Brand href="#">hnstar</Navbar.Brand>
                 <Navbar.Toggle aria-controls="basic-navbar-nav" />
                 <Navbar.Collapse id="basic-navbar-nav">
                     <Nav className="mr-auto">
@@ -181,30 +183,28 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                         <Form.Label>Display Date</Form.Label>
                         <br />
                         <ButtonGroup toggle>
-                            {DateDisplay.enumerate().map((dd, idx) => {
-                                return (
-                                    <ToggleButton
-                                        key={idx}
-                                        type="radio"
-                                        variant="secondary"
-                                        name="radio"
-                                        value={dd.of}
-                                        checked={props.dateDisplay.of === dd.of}
-                                        onChange={async (e: ChangeEvent<HTMLInputElement>) => {
-                                            const v = e.currentTarget.value;
-                                            if (v === "distance" || v === "datetime" || v === "date")
-                                                await props.setDateDisplay({ of: v });
-                                            else
-                                                await props.setDateDisplay({
-                                                    of: "custom",
-                                                    value: state.lastCustomDateDisplay || "hbbb E w/52",
-                                                });
-                                        }}
-                                    >
-                                        {DateDisplay.getDateDisplayLabel(dd)}
-                                    </ToggleButton>
-                                );
-                            })}
+                            {DateDisplay.enumerate().map((dd, idx) => (
+                                <ToggleButton
+                                    key={idx}
+                                    type="radio"
+                                    variant="secondary"
+                                    name="dateDisplay"
+                                    value={dd.of}
+                                    checked={props.dateDisplay.of === dd.of}
+                                    onChange={async (e: ChangeEvent<HTMLInputElement>) => {
+                                        const v = e.currentTarget.value;
+                                        if (v === "distance" || v === "datetime" || v === "date")
+                                            await props.setDateDisplay({ of: v });
+                                        else
+                                            await props.setDateDisplay({
+                                                of: "custom",
+                                                value: state.lastCustomDateDisplay || "hbbb E w/52",
+                                            });
+                                    }}
+                                >
+                                    {DateDisplay.getDateDisplayLabel(dd)}
+                                </ToggleButton>
+                            ))}
                         </ButtonGroup>
                         {props.dateDisplay.of === "custom" && (
                             <>
@@ -225,6 +225,29 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                                 </a>
                             </>
                         )}
+                    </Form.Group>
+                    <Form.Group controlId="darkTheme">
+                        <ButtonGroup toggle>
+                            {[
+                                { name: "Dark", value: true },
+                                { name: "Light", value: false },
+                            ].map((radio, idx) => (
+                                <ToggleButton
+                                    key={idx}
+                                    type="radio"
+                                    variant="secondary"
+                                    name="darkTheme"
+                                    value={radio.value}
+                                    checked={radio.value === props.darkTheme}
+                                    onChange={async (e: ChangeEvent<HTMLInputElement>) => {
+                                        const v = e.currentTarget.value;
+                                        await props.setDarkTheme(v === "true");
+                                    }}
+                                >
+                                    {radio.name}
+                                </ToggleButton>
+                            ))}
+                        </ButtonGroup>
                     </Form.Group>
                 </Modal.Body>
                 <Modal.Footer>
@@ -310,17 +333,11 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                                 <Button
                                     type="button"
                                     className="mr-1"
-                                    variant="light"
                                     onClick={() => this.setAdjacentRange("previous")}
                                 >
                                     &lt;
                                 </Button>
-                                <Button
-                                    type="button"
-                                    className="mr-1"
-                                    variant="light"
-                                    onClick={() => this.setAdjacentRange("next")}
-                                >
+                                <Button type="button" className="mr-1" onClick={() => this.setAdjacentRange("next")}>
                                     &gt;
                                 </Button>
                                 <ButtonGroup toggle>

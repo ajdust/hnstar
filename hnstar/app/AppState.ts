@@ -85,6 +85,7 @@ export interface AppState {
     filter: StoryRankingFilter;
     dateDisplay: DateDisplay;
     dateRange: DateRange;
+    darkTheme: boolean;
     username?: string;
     expires?: Date;
     stories: Story[];

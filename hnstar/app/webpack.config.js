@@ -30,6 +30,7 @@ module.exports = {
             patterns: [
                 { from: "./index.html" },
                 { from: "./index.css" },
+                { from: "./dark.css" },
                 { from: "./favicon48.png" },
                 { from: "./favicon196.png" },
             ],

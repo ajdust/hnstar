@@ -1,0 +1,60 @@
+.navbar-light .navbar-brand {
+    color: rgba(238, 238, 238, 1);
+}
+
+.navbar-light .navbar-brand:hover, .navbar-light .navbar-brand:focus {
+    color: rgb(255, 255, 255);
+}
+
+.navbar-light .navbar-nav .nav-link:hover, .navbar-light .navbar-nav .nav-link:focus {
+    color: rgb(255, 255, 255);
+}
+
+.navbar-light .navbar-nav .nav-link {
+    color: rgba(238, 238, 238, 1);
+}
+
+.entries .homepage {
+    color: #ff8339;
+}
+.entries a:hover {
+    text-decoration: none;
+    background-color: #0d5b87;
+}
+.entries a.hn:visited,
+.entries a.link:visited {
+    color: #c9c9c9;
+}
+.entries .source {
+    color: #c9c9c9;
+    font-size: 12px;
+}
+
+.progress.gray-progress-bar {
+    height: 6px;
+}
+
+.progress.gray-progress-bar .progress-bar {
+    background-color: #0e5065;
+    height: 6px;
+}
+
+.progress.gray-progress-bar .progress-bar.progress-bar-animated {
+    background-color: #1687a8;
+}
+
+.input-group > .custom-file, .input-group > .custom-select, .input-group > .form-control, .input-group > .form-control-plaintext {
+    background-color: black;
+}
+
+.form-control {
+    background-color: black;
+}
+
+a {
+    color: #71bdd4;
+}
+
+a:hover {
+    color: #9fb7bb;
+}
