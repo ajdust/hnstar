@@ -4,5 +4,5 @@ import App from "./App";
 
 document.addEventListener("DOMContentLoaded", () => {
     const appEl = document.getElementById("app")!;
-    ReactDOM.render(<App />, appEl);
+    ReactDOM.render(<App version={1} />, appEl);
 });

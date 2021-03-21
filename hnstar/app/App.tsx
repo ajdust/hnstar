@@ -2,10 +2,9 @@ import * as React from "react";
 import NavigationBar from "./NavigationBar";
 import PageContent from "./PageContent";
 import { getStoriesRequest, Story, StoryRankingFilter, validateStory } from "./ApiStories";
-import { useEffect, useState } from "react";
 import { AppState, DateDisplay, DateRange } from "./AppState";
-import { addDays, addMonths } from "date-fns";
 import { ProgressBar } from "react-bootstrap";
+import update from "immutability-helper";
 
 function getFilterFromUrl(): StoryRankingFilter {
     const sp = new URL(window.location.toString()).searchParams;
@@ -68,134 +67,171 @@ function setStickySettings(settings: StickySettings) {
     window.localStorage.setItem("sticky", JSON.stringify(settings));
 }
 
-function App() {
-    const stickySettings = getStickySettings();
-    const defaultFilter = getFilterFromUrl();
+class App extends React.Component<any, AppState> {
+    state: AppState;
 
-    // Apply sticky settings to filter if no URL filter is present
-    try {
-        const sp = new URL(window.location.toString()).searchParams;
-        if (!sp.toString()) {
-            // TODO: validate the JSON.parse usage
-            if (stickySettings.zScore) defaultFilter.zScore = JSON.parse(stickySettings.zScore);
-            if (stickySettings.sort) defaultFilter.sort = JSON.parse(stickySettings.sort);
-        }
-    } catch (e) {
-        console.warn(e);
-    }
+    setFilter = (filter: StoryRankingFilter): Promise<void> => {
+        console.log("Current filter...", this.state.filter);
+        console.log("New filter...", filter);
+        const state = update(this.state, {
+            filter: {
+                pageSize: { $set: filter.pageSize },
+                timestamp: { $set: filter.timestamp },
+                zScore: { $set: filter.zScore },
+                title: { $set: filter.title },
+                sort: { $set: filter.sort },
+                score: { $set: filter.score },
+                pageNumber: { $set: filter.pageNumber },
+                url: { $set: filter.url },
+                comment: { $set: filter.comment },
+                flags: { $set: filter.flags },
+                stars: { $set: filter.stars },
+                status: { $set: filter.status },
+            },
+        });
+        console.log("Updated filter...", state.filter);
+        return new Promise<void>((resolve, _) => {
+            this.setState(state, resolve);
+        });
+    };
 
-    const [appState, setAppState] = useState({
-        stories: [],
-        dateDisplay: stickySettings.dateDisplay || "distance",
-        dateRange: stickySettings.dateRange || "custom",
-        filter: defaultFilter,
-        loading: false,
-    } as AppState);
+    setPage = (pageSize: number, pageNumber: number): Promise<void> => {
+        return new Promise<void>((resolve, _) => {
+            this.setState(
+                { ...this.state, filter: { ...this.state.filter, pageSize: pageSize, pageNumber: pageNumber } },
+                resolve
+            );
+        });
+    };
 
-    const setFilter = (filter: StoryRankingFilter) => setAppState({ ...appState, filter });
-    const setPage = (pageSize: number, pageNumber: number) =>
-        setAppState({ ...appState, filter: { ...appState.filter, pageSize: pageSize, pageNumber: pageNumber } });
-    const setDateDisplay = (dateDisplay: DateDisplay) => {
-        setAppState({ ...appState, dateDisplay });
+    setDateDisplay = (dateDisplay: DateDisplay): Promise<void> => {
         const ss = getStickySettings();
         ss.dateDisplay = dateDisplay;
         setStickySettings(ss);
+        return new Promise<void>((resolve, _) => {
+            this.setState({ ...this.state, dateDisplay }, resolve);
+        });
     };
-    const setDateRange = (dateRange: DateRange) => {
+
+    setDateRange = (dateRange: DateRange): Promise<void> => {
         const ss = getStickySettings();
         ss.dateRange = dateRange;
         setStickySettings(ss);
-
-        let thenMs = null;
-        if (dateRange.of === "24-hours") {
-            thenMs = Math.floor(addDays(new Date(), -1).getTime() / 1000);
-        } else if (dateRange.of === "3-days") {
-            thenMs = Math.floor(addDays(new Date(), -3).getTime() / 1000);
-        } else if (dateRange.of === "week") {
-            thenMs = Math.floor(addDays(new Date(), -7).getTime() / 1000);
-        } else if (dateRange.of === "month") {
-            thenMs = Math.floor(addMonths(new Date(), -1).getTime() / 1000);
-        } else {
-            setAppState({ ...appState, dateRange: dateRange });
-            return;
-        }
-
-        if (!thenMs) return;
-        setAppState({
-            ...appState,
-            dateRange: dateRange,
-            filter: { ...appState.filter, timestamp: { gt: thenMs } },
+        const state = update(this.state, {
+            dateRange: { $set: dateRange },
+        });
+        return new Promise<void>((resolve, _) => {
+            this.setState(state, resolve);
         });
     };
 
-    useEffect(() => {
-        const getStories = async () => {
-            const request = getStoriesRequest(appState.filter);
-            try {
-                const response = await fetch(request);
-                if (response.status !== 200) {
-                    console.warn(response);
+    getStories = async () => {
+        const request = getStoriesRequest(this.state.filter);
+        try {
+            const response = await fetch(request);
+            if (response.status !== 200) {
+                console.warn(response);
+                return;
+            }
+
+            const rawStories = (await response.json()) as Story[];
+            const stories: Story[] = [];
+            for (const story of rawStories) {
+                const error = validateStory(story);
+                if (error) {
+                    console.warn(error, story);
                     return;
                 }
 
-                const rawStories = (await response.json()) as Story[];
-                const stories: Story[] = [];
-                for (const story of rawStories) {
-                    const error = validateStory(story);
-                    if (error) {
-                        console.warn(error, story);
-                        return;
-                    }
-
-                    stories.push(story);
-                }
-
-                setAppState({ ...appState, stories, loading: false });
-            } catch (e) {
-                console.error(e);
-                setAppState({ ...appState, stories: [], loading: false });
+                stories.push(story);
             }
+
+            this.setState({ ...this.state, stories, loading: false });
+        } catch (e) {
+            console.error(e);
+            this.setState({ ...this.state, stories: [], loading: false });
+        }
+    };
+
+    afterGetStories = () => {
+        window.scrollTo(0, 0);
+        // Set filter to URL
+        setFilterToUrl(this.state.filter);
+
+        // Set sticky filter settings if set
+        const ss = getStickySettings();
+        if (this.state.filter.zScore) {
+            ss.zScore = JSON.stringify(this.state.filter.zScore);
+        }
+        if (this.state.filter.sort) {
+            ss.sort = JSON.stringify(this.state.filter.sort);
+        }
+        setStickySettings(ss);
+    };
+
+    constructor(props: any) {
+        super(props);
+        const stickySettings = getStickySettings();
+        const defaultFilter = getFilterFromUrl();
+
+        // Apply sticky settings to filter if no URL filter is present
+        try {
+            const sp = new URL(window.location.toString()).searchParams;
+            if (!sp.toString()) {
+                // TODO: validate the JSON.parse usage
+                if (stickySettings.zScore) defaultFilter.zScore = JSON.parse(stickySettings.zScore);
+                if (stickySettings.sort) defaultFilter.sort = JSON.parse(stickySettings.sort);
+            }
+        } catch (e) {
+            console.warn(e);
+        }
+
+        console.log("Constructing App");
+        this.state = {
+            stories: [],
+            dateDisplay: stickySettings.dateDisplay || { of: "distance" },
+            dateRange: stickySettings.dateRange || { of: "week" },
+            filter: defaultFilter,
+            loading: true,
         };
 
-        setAppState({ ...appState, loading: true });
-        getStories().then(() => {
-            window.scrollTo(0, 0);
-            // Set filter to URL
-            setFilterToUrl(appState.filter);
+        this.getStories().then(this.afterGetStories);
+    }
 
-            // Set sticky filter settings if set
-            const ss = getStickySettings();
-            if (appState.filter.zScore) {
-                ss.zScore = JSON.stringify(appState.filter.zScore);
-            }
-            if (appState.filter.sort) {
-                ss.sort = JSON.stringify(appState.filter.sort);
-            }
-            setStickySettings(ss);
-        });
-    }, [appState.filter]);
+    componentDidUpdate(_: Readonly<any>, prevState: Readonly<AppState>, __?: any) {
+        const prev = JSON.stringify(prevState.filter);
+        const now = JSON.stringify(this.state.filter);
+        console.log("Prev", prev);
+        console.log("Now", now);
+        if (prev !== now) {
+            this.setState({ ...this.state, loading: true });
+            this.getStories().then(this.afterGetStories);
+        }
+    }
 
-    return (
-        <div className="App">
-            <NavigationBar
-                dateDisplay={appState.dateDisplay}
-                setDateDisplay={setDateDisplay}
-                dateRange={appState.dateRange}
-                setDateRange={setDateRange}
-                filter={appState.filter}
-                setFilter={setFilter}
-                loading={appState.loading}
-            />
-            <ProgressBar className={"gray-progress-bar"} animated={appState.loading} now={100} />
-            <PageContent
-                stories={appState.stories}
-                page={{ size: appState.filter.pageSize, number: appState.filter.pageNumber }}
-                dateDisplay={appState.dateDisplay}
-                setPage={setPage}
-                loading={appState.loading}
-            />
-        </div>
-    );
+    render() {
+        return (
+            <div className="App">
+                <NavigationBar
+                    dateDisplay={this.state.dateDisplay}
+                    setDateDisplay={this.setDateDisplay}
+                    dateRange={this.state.dateRange}
+                    setDateRange={this.setDateRange}
+                    filter={this.state.filter}
+                    setFilter={this.setFilter}
+                    loading={this.state.loading}
+                />
+                <ProgressBar className={"gray-progress-bar"} animated={this.state.loading} now={100} />
+                <PageContent
+                    stories={this.state.stories}
+                    page={{ size: this.state.filter.pageSize, number: this.state.filter.pageNumber }}
+                    dateDisplay={this.state.dateDisplay}
+                    setPage={this.setPage}
+                    loading={this.state.loading}
+                />
+            </div>
+        );
+    }
 }
 
 export default App;

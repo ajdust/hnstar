@@ -5,7 +5,7 @@ export type DateRange =
     | { of: "3-days" }
     | { of: "week" }
     | { of: "month" }
-    | { of: "custom"; value: { gt: Date | undefined; lt: Date | undefined } };
+    | { of: "custom"; value: { gt: number | undefined; lt: number | undefined } };
 export type DateDisplay = { of: "datetime" } | { of: "date" } | { of: "distance" } | { of: "custom"; value: string };
 
 export interface AppState {
