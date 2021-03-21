@@ -72,7 +72,7 @@ export const DateDisplay = {
     },
     getDateDisplayLabel: (display: DateDisplay): string => {
         const of = display.of;
-        if (of === "datetime") return "Date Time";
+        if (of === "datetime") return "Time";
         else if (of === "date") return "Date";
         else if (of === "distance") return "Distance";
         else if (of === "custom") return "Custom";

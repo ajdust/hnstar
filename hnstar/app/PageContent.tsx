@@ -148,7 +148,7 @@ function PageContent(props: PageContentProps) {
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >
-                                    <span className="ml-1">{story.title + " "}</span>
+                                    <span>{story.title + " "}</span>
                                     <span className="source">
                                         {urlSource(story.url)} {distance(story.timestamp)}
                                     </span>
