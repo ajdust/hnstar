@@ -71,25 +71,7 @@ class App extends React.Component<any, AppState> {
     state: AppState;
 
     setFilter = (filter: StoryRankingFilter): Promise<void> => {
-        console.log("Current filter...", this.state.filter);
-        console.log("New filter...", filter);
-        const state = update(this.state, {
-            filter: {
-                pageSize: { $set: filter.pageSize },
-                timestamp: { $set: filter.timestamp },
-                zScore: { $set: filter.zScore },
-                title: { $set: filter.title },
-                sort: { $set: filter.sort },
-                score: { $set: filter.score },
-                pageNumber: { $set: filter.pageNumber },
-                url: { $set: filter.url },
-                comment: { $set: filter.comment },
-                flags: { $set: filter.flags },
-                stars: { $set: filter.stars },
-                status: { $set: filter.status },
-            },
-        });
-        console.log("Updated filter...", state.filter);
+        const state = { ...this.state, filter };
         return new Promise<void>((resolve, _) => {
             this.setState(state, resolve);
         });
