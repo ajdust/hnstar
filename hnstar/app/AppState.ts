@@ -16,7 +16,7 @@ export const DateRange = {
     getDateRangeLabel: (range: DateRange): string => {
         const of = range.of;
         if (of === "24-hours") {
-            return "24 Hours";
+            return "24 Hrs";
         } else if (of === "3-days") {
             return "3 Days";
         } else if (of === "week") {
