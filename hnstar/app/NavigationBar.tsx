@@ -84,13 +84,13 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
         return new Promise((resolve, _) => this.setState({ ...this.state, lastCustomDateDisplay: display }, resolve));
     };
 
-    setNewFilter = async (): Promise<void> => {
+    applyDraftFilter = async (): Promise<void> => {
         await this.props.setFilter(this.state.draftFilter);
         await this.props.setDateRange(this.state.draftDateRange);
         await this.hideFilter();
     };
 
-    resetFilter = async (): Promise<void> => {
+    resetDraftFilter = async (): Promise<void> => {
         await this.setDraftFilter(this.props.filter);
         await this.setDraftDateRange(this.props.dateRange);
     };
@@ -140,6 +140,9 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                             placeholder="Search"
                             disabled={props.loading}
                             value={state.search}
+                            onKeyPress={async (e: KeyboardEvent) => {
+                                if (e.key === "Enter") await this.applyDraftFilter();
+                            }}
                             onChange={async (e: ChangeEvent<HTMLInputElement>) => {
                                 const value = e.currentTarget.value;
                                 await this.setSearch(value);
@@ -159,7 +162,7 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                             }}
                         />
                         <InputGroup.Append>
-                            <Button type="button" variant="outline-success">
+                            <Button type="button" variant="outline-success" onClick={this.applyDraftFilter}>
                                 Search
                             </Button>
                         </InputGroup.Append>
@@ -472,10 +475,10 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                     </Form.Group>
                 </Modal.Body>
                 <Modal.Footer>
-                    <Button variant="primary" onClick={this.setNewFilter}>
+                    <Button variant="primary" onClick={this.applyDraftFilter}>
                         Apply
                     </Button>
-                    <Button variant="secondary" onClick={this.resetFilter}>
+                    <Button variant="secondary" onClick={this.resetDraftFilter}>
                         Reset
                     </Button>
                     <Button variant="secondary" onClick={this.hideFilter}>
