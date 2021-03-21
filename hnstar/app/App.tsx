@@ -186,7 +186,6 @@ class App extends React.Component<any, AppState> {
             console.warn(e);
         }
 
-        console.log("Constructing App");
         this.state = {
             stories: [],
             dateDisplay: stickySettings.dateDisplay || { of: "distance" },
@@ -201,8 +200,6 @@ class App extends React.Component<any, AppState> {
     componentDidUpdate(_: Readonly<any>, prevState: Readonly<AppState>, __?: any) {
         const prev = JSON.stringify(prevState.filter);
         const now = JSON.stringify(this.state.filter);
-        console.log("Prev", prev);
-        console.log("Now", now);
         if (prev !== now) {
             this.setState({ ...this.state, loading: true });
             this.getStories().then(this.afterGetStories);
