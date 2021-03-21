@@ -95,6 +95,16 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
         await this.setDraftDateRange(this.props.dateRange);
     };
 
+    zScoreHelpText = (zScore: number | undefined): string => {
+        if (zScore === 0) return "Average or greater score";
+        else if (!zScore) return "";
+
+        const zSc = zScore.toFixed(1);
+        if (zScore < -1) return `Very below average (${zSc})`;
+        else if (zScore > 1) return `Very above average (+${zSc})`;
+        else return zScore < 0 ? `Below average or greater (${zSc})` : `Above average or greater (+${zSc})`;
+    };
+
     constructor(props: NavigationProps) {
         super(props);
         this.state = {
@@ -228,7 +238,7 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
         return (
             <Modal show={state.showFilter} onHide={this.hideFilter}>
                 <Modal.Body>
-                    <Form.Group controlId="filterCopyTimestamp">
+                    <Form.Group controlId="draftFilterTimestamp">
                         <Form.Row>
                             <Col>
                                 <Form.Label>Since</Form.Label>
@@ -343,13 +353,43 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                             </Col>
                         </Form.Row>
                     </Form.Group>
-                    <Form.Group controlId="filterCopyScore">
-                        <Form.Label>Score and z-Score</Form.Label>
+                    <Form.Group controlId="draftFilterScore">
+                        <Form.Label>Minimum z-Score</Form.Label>
+                        <Form.Row>
+                            <Form.Control
+                                type="range"
+                                placeholder="-3"
+                                disabled={props.loading}
+                                value={
+                                    state.draftFilter.zScore?.gt || state.draftFilter.zScore?.gt === 0
+                                        ? Math.floor(((state.draftFilter.zScore.gt + 2.0) / 4.0) * 100)
+                                        : 0.0
+                                }
+                                onChange={async (e: ChangeEvent<HTMLInputElement>) => {
+                                    let value = parseFloat(e.currentTarget.value);
+                                    if (isNaN(value)) return;
+                                    if (value === 0) {
+                                        await this.setDraftFilter({ ...state.draftFilter, zScore: {} });
+                                    } else {
+                                        await this.setDraftFilter({
+                                            ...state.draftFilter,
+                                            zScore: { ...state.draftFilter.zScore, gt: (value / 100) * 4.0 - 2.0 },
+                                        });
+                                    }
+                                }}
+                            />
+                            <i style={{ width: "100%", textAlign: "center" }}>
+                                {this.zScoreHelpText(state.draftFilter.zScore?.gt)}
+                            </i>
+                        </Form.Row>
+                    </Form.Group>
+                    <Form.Group controlId="draftFilterSort">
                         <Form.Row>
                             <Col>
+                                <Form.Label>Minimum Score</Form.Label>
                                 <Form.Control
                                     type="number"
-                                    placeholder="Minimum Score"
+                                    placeholder="0"
                                     disabled={props.loading}
                                     value={optionalNumberToString(state.draftFilter.score?.gt)}
                                     onChange={async (e: ChangeEvent<HTMLInputElement>) => {
@@ -362,79 +402,6 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                                     }}
                                 />
                             </Col>
-                            <Col>
-                                <Form.Control
-                                    type="text"
-                                    placeholder="Min z-Score (-5.0 to 5.0)"
-                                    disabled={props.loading}
-                                    value={
-                                        state.draftFilter.zScore?.gt || state.draftFilter.zScore?.gt === 0
-                                            ? state.draftFilter.zScore.gt.toString()
-                                            : ""
-                                    }
-                                    onChange={async (e: ChangeEvent<HTMLInputElement>) => {
-                                        let value = parseFloat(e.currentTarget.value);
-                                        if (isNaN(value)) return;
-                                        if (value < -5) value = -5;
-                                        else if (value > 5) value = 5;
-                                        await this.setDraftFilter({
-                                            ...state.draftFilter,
-                                            zScore: { ...state.draftFilter.zScore, gt: value },
-                                        });
-                                    }}
-                                />
-                            </Col>
-                        </Form.Row>
-                    </Form.Group>
-                    <Form.Group controlId="filterCopyTitle">
-                        <Form.Row>
-                            <Col>
-                                <Form.Label>Title (regex)</Form.Label>
-                                <Form.Control
-                                    type="text"
-                                    disabled={props.loading}
-                                    value={state.draftFilter.title?.regex || ""}
-                                    onChange={async (e: ChangeEvent<HTMLInputElement>) => {
-                                        let value = e.currentTarget.value;
-                                        if (!value || !createRegExp(value)) {
-                                            await this.setSearch("");
-                                            await this.setDraftFilter({ ...state.draftFilter, title: undefined });
-                                        } else {
-                                            await this.setSearch("");
-                                            value = value.trim();
-                                            await this.setDraftFilter({
-                                                ...state.draftFilter,
-                                                title: { regex: value, not: false },
-                                            });
-                                        }
-                                    }}
-                                />
-                            </Col>
-                            <Col>
-                                <Form.Label>URL (regex)</Form.Label>
-                                <Form.Control
-                                    type="text"
-                                    disabled={props.loading}
-                                    value={state.draftFilter.url?.regex || ""}
-                                    onChange={async (e: ChangeEvent<HTMLInputElement>) => {
-                                        let value = e.currentTarget.value;
-                                        if (!value || !createRegExp(value)) {
-                                            await this.setSearch("");
-                                            await this.setDraftFilter({ ...state.draftFilter, url: undefined });
-                                        } else {
-                                            await this.setSearch("");
-                                            await this.setDraftFilter({
-                                                ...state.draftFilter,
-                                                url: value.trim() ? { regex: value.trim(), not: false } : undefined,
-                                            });
-                                        }
-                                    }}
-                                />
-                            </Col>
-                        </Form.Row>
-                    </Form.Group>
-                    <Form.Group controlId="filterCopySort">
-                        <Form.Row>
                             <Col>
                                 <Form.Label>Order By</Form.Label>
                                 <Form.Control
@@ -471,7 +438,7 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                             </Col>
                         </Form.Row>
                     </Form.Group>
-                    <Form.Group controlId="filterCopyPage">
+                    <Form.Group controlId="draftFilterPage">
                         <Form.Row>
                             <Col>
                                 <Form.Label>Page Size</Form.Label>
