@@ -425,7 +425,7 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                     <Form.Group controlId="draftFilterSort">
                         <Form.Row>
                             <Col>
-                                <Form.Label>Minimum Score</Form.Label>
+                                <Form.Label>Min Score</Form.Label>
                                 <Form.Control
                                     type="number"
                                     placeholder="0"
@@ -475,14 +475,11 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                                     ))}
                                 </ButtonGroup>
                             </Col>
-                        </Form.Row>
-                    </Form.Group>
-                    <Form.Group controlId="draftFilterPage">
-                        <Form.Row>
                             <Col>
                                 <Form.Label>Page Size</Form.Label>
                                 <Form.Control
-                                    type="number"
+                                    as="select"
+                                    custom
                                     disabled={props.loading}
                                     value={state.draftFilter.pageSize}
                                     onChange={async (e: ChangeEvent<HTMLInputElement>) => {
@@ -491,21 +488,13 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                                         if (pageSize <= 1) pageSize = 100;
                                         await this.setDraftFilter({ ...state.draftFilter, pageSize: pageSize });
                                     }}
-                                />
-                            </Col>
-                            <Col>
-                                <Form.Label>Page Number</Form.Label>
-                                <Form.Control
-                                    type="number"
-                                    disabled={props.loading}
-                                    value={state.draftFilter.pageNumber}
-                                    onChange={async (e: ChangeEvent<HTMLInputElement>) => {
-                                        const value = e.currentTarget.value;
-                                        let pageNumber = parseInt(value) || 0;
-                                        if (pageNumber <= 0) pageNumber = 0;
-                                        await this.setDraftFilter({ ...state.draftFilter, pageNumber: pageNumber });
-                                    }}
-                                />
+                                >
+                                    {[10, 20, 50, 100, 200].map((i) => (
+                                        <option value={i} key={i}>
+                                            {i}
+                                        </option>
+                                    ))}
+                                </Form.Control>
                             </Col>
                         </Form.Row>
                     </Form.Group>

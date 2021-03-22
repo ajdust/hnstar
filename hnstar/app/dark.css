@@ -59,3 +59,7 @@ a {
 a:hover {
     color: #9fb7bb;
 }
+
+.navbar-toggler {
+    background-color: #212121;
+}

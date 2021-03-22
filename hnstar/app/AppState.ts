@@ -24,7 +24,7 @@ export const DateRange = {
         } else if (of === "month") {
             return "Month";
         } else if (of === "custom") {
-            return "Custom";
+            return "Other";
         } else {
             return "Unknown";
         }
