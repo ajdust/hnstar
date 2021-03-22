@@ -365,7 +365,7 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                                             key={idx}
                                             type="radio"
                                             variant="secondary"
-                                            name="radio"
+                                            name="dateRange"
                                             value={range.of}
                                             checked={state.draftDateRange.of === range.of}
                                             onChange={async (e: ChangeEvent<HTMLInputElement>) => {
@@ -443,37 +443,37 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                             </Col>
                             <Col>
                                 <Form.Label>Order By</Form.Label>
-                                <Form.Control
-                                    as="select"
-                                    custom
-                                    disabled={props.loading}
-                                    value={
-                                        (state.draftFilter.sort?.length || 0) > 0
-                                            ? state.draftFilter.sort![0].sort
-                                            : "timestamp"
-                                    }
-                                    onChange={async (e: ChangeEvent<HTMLSelectElement>) => {
-                                        const value = e.currentTarget.value;
-                                        if (!value) {
-                                            if (!state.draftFilter.sort) return;
-                                            await this.setDraftFilter({ ...state.draftFilter, sort: undefined });
-                                            return;
-                                        }
-
-                                        if (value === "timestamp" || value === "score" || value === "stars") {
-                                            const firstSort = { sort: value, asc: false } as StoryRankingSort;
-                                            if (!state.draftFilter.sort) state.draftFilter.sort = [firstSort];
-                                            else state.draftFilter.sort[0] = firstSort;
-                                            await this.setDraftFilter({
-                                                ...state.draftFilter,
-                                            });
-                                        }
-                                    }}
-                                >
-                                    <option value={"timestamp"}>Timestamp</option>
-                                    <option value={"score"}>Score</option>
-                                    <option value={"stars"}>Stars</option>
-                                </Form.Control>
+                                <br />
+                                <ButtonGroup toggle>
+                                    {[
+                                        { name: "Time", value: "timestamp" },
+                                        { name: "Score", value: "score" },
+                                    ].map((sort, idx) => (
+                                        <ToggleButton
+                                            key={idx}
+                                            type="radio"
+                                            variant="secondary"
+                                            name="sorting"
+                                            value={sort.value}
+                                            checked={
+                                                sort.value ===
+                                                (state.draftFilter.sort?.length ? state.draftFilter.sort[0].sort : "")
+                                            }
+                                            onChange={async (e: ChangeEvent<HTMLInputElement>) => {
+                                                const value = e.currentTarget.value;
+                                                if (value === "timestamp" || value === "score" || value === "stars") {
+                                                    const firstSort = { sort: value, asc: false } as StoryRankingSort;
+                                                    await this.setDraftFilter({
+                                                        ...state.draftFilter,
+                                                        sort: [firstSort],
+                                                    });
+                                                }
+                                            }}
+                                        >
+                                            {sort.name}
+                                        </ToggleButton>
+                                    ))}
+                                </ButtonGroup>
                             </Col>
                         </Form.Row>
                     </Form.Group>
