@@ -29,6 +29,7 @@ function PageContent(props: PageContentProps) {
     };
 
     if (!stories || stories.length === 0) {
+        if (loading) return <div className="p-4">Loading...</div>;
         return <div className="p-4">No stories found</div>;
     }
 

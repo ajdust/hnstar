@@ -244,6 +244,8 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                         )}
                     </Form.Group>
                     <Form.Group controlId="darkTheme">
+                        <Form.Label>Styling</Form.Label>
+                        <br />
                         <ButtonGroup toggle>
                             {[
                                 { name: "Dark", value: true },
