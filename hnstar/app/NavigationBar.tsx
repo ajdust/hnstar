@@ -117,7 +117,7 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                 props.dateRange.of === "custom" ? props.dateRange.value : { gt: undefined, lt: undefined },
             showSettings: false,
             showFilter: false,
-            search: "",
+            search: props.filter?.title?.regex || "",
         };
     }
 
@@ -136,7 +136,7 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                         <Nav.Link onClick={this.showSettings}>settings</Nav.Link>
                     </Nav>
 
-                    <InputGroup className="mr-auto" style={{ maxWidth: "25rem" }}>
+                    <InputGroup className="mr-auto top-search-box" style={{ maxWidth: "25rem" }}>
                         <FormControl
                             type="text"
                             placeholder="Search"
@@ -167,6 +167,23 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                             <Button type="button" variant="outline-success" onClick={this.applyDraftFilter}>
                                 Search
                             </Button>
+                            {state.search && (
+                                <Button
+                                    type="button"
+                                    variant="outline-info"
+                                    onClick={async () => {
+                                        await this.setSearch("");
+                                        await this.setDraftFilter({
+                                            ...state.draftFilter,
+                                            title: undefined,
+                                            url: undefined,
+                                        });
+                                        await this.applyDraftFilter();
+                                    }}
+                                >
+                                    Clear
+                                </Button>
+                            )}
                         </InputGroup.Append>
                     </InputGroup>
                 </Navbar.Collapse>

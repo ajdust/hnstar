@@ -2,7 +2,11 @@
     color: rgba(238, 238, 238, 1);
 }
 
-.navbar-light .navbar-brand:hover, .navbar-light .navbar-brand:focus {
+.navbar-light .navbar-brand:hover, .navbar-light {
+    color: rgb(255, 255, 255);
+}
+
+.navbar-light .navbar-nav .nav-link:hover, .navbar-light .navbar-nav {
     color: rgb(255, 255, 255);
 }
 
@@ -43,12 +47,9 @@
     background-color: #1687a8;
 }
 
-.input-group > .custom-file, .input-group > .custom-select, .input-group > .form-control, .input-group > .form-control-plaintext {
+.top-search-box.input-group > .form-control {
     background-color: black;
-}
-
-.form-control {
-    background-color: black;
+    color: #c9c9c9;
 }
 
 a {

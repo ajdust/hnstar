@@ -37,7 +37,7 @@ export interface StoryRankingSort {
 }
 
 export interface PgRegex {
-    regex: String;
+    regex: string;
     not: boolean;
 }
 
