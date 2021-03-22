@@ -493,20 +493,32 @@ fn get_query<'a>(model: &StoryRankingFilter, user_id: i32) -> Result<QueryParame
         }
     }
 
-    let page_size = model.page_size.map_or(100, |v| v);
+    let page_size = clamp(model.page_size.map_or(100, |v| v), 1, 500);
     sort_query.push(String::from(format!("limit {}", page_size)));
-    let page_number = model.page_number.map_or(0, |v| v);
+    let page_number = clamp_min(model.page_number.map_or(0, |v| v), 0);
     sort_query.push(String::from(format!("offset {}", page_number * page_size)));
 
     let sort_clause = format!("order by {} ", sort_query.join(" "));
 
     let query = format!("{} \n{} \n{}", from_clause, where_clause, sort_clause);
     #[cfg(feature = "debug")]
-        {
-            println!("{}", &query);
-            println!("{:?}", parameters);
-        }
+    {
+        println!("{}", &query);
+        println!("{:?}", parameters);
+    }
     Ok(QueryParameters { query, parameters })
+}
+
+fn clamp_min(i: i32, min: i32) -> i32 {
+    if i < min { min } else { i }
+}
+
+fn clamp(i: i32, min: i32, max: i32) -> i32 {
+    if i > max {
+        max
+    } else if i < min {
+        min
+    } else { i }
 }
 
 async fn do_get_story_ranking(auth: &mut AuthenticatedConnection, user_id: i32, model: &StoryRankingFilter) -> Result<String, WebError> {
