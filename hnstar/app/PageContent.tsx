@@ -67,7 +67,7 @@ function PageContent(props: PageContentProps) {
     // Pagination
     const active = page.number;
     const items = [];
-    const pageCount = Math.ceil((stories.length ? stories[0].fullCount : 0) / page.size) - 1;
+    const pageCount = Math.max(0, Math.ceil((stories.length ? stories[0].fullCount : 0) / page.size) - 1);
     if (pageCount > 0 && active >= 4) {
         items.push(
             <Pagination.Item key={0} onClick={() => onClickPage(0)} disabled={loading}>
@@ -112,6 +112,14 @@ function PageContent(props: PageContentProps) {
                 &gt;
             </Pagination.Item>
         );
+
+        if (active >= 5) {
+            items.push(
+                <Pagination.Item key="last" onClick={() => onClickPage(pageCount)} disabled={loading}>
+                    &gt;&gt;
+                </Pagination.Item>
+            );
+        }
     }
 
     const pagination = (
