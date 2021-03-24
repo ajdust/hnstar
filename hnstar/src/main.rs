@@ -493,6 +493,10 @@ fn get_query<'a>(model: &StoryRankingFilter, user_id: i32) -> Result<QueryParame
         }
     }
 
+    if sort_query.is_empty() {
+        sort_query.push(String::from("timestamp desc"));
+    }
+
     let page_size = clamp(model.page_size.map_or(100, |v| v), 1, 500);
     sort_query.push(String::from(format!("limit {}", page_size)));
     let page_number = clamp_min(model.page_number.map_or(0, |v| v), 0);
