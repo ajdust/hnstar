@@ -1,52 +1,25 @@
 import * as React from "react";
 import NavigationBar from "./NavigationBar";
 import PageContent from "./PageContent";
-import { getStoriesRequest, Story, StoryRankingFilter, validateStory } from "./ApiStories";
+import {
+    getStoriesRequest,
+    Story,
+    StoryRankingFilter,
+    validateNumberFilter,
+    validateSorts,
+    validateStory,
+} from "./ApiStories";
 import { AppState, DateDisplay, DateRange } from "./AppState";
 import { ProgressBar } from "react-bootstrap";
 import update from "immutability-helper";
-
-function getFilterFromUrl(): StoryRankingFilter {
-    const sp = new URL(window.location.toString()).searchParams;
-    const defaultFilter = {
-        pageSize: 100,
-        pageNumber: 0,
-    };
-
-    const filterJson = sp.get("filter");
-    if (!filterJson) {
-        return defaultFilter;
-    }
-
-    try {
-        const filter = JSON.parse(filterJson);
-
-        // enforce defaults
-        for (const key of Object.keys(defaultFilter)) {
-            if (!filter[key]) {
-                // @ts-ignore
-                filter[key] = defaultFilter[key];
-            }
-        }
-
-        return filter;
-    } catch (e) {
-        return defaultFilter;
-    }
-}
-
-function setFilterToUrl(filter: StoryRankingFilter) {
-    const sp = new URL(window.location.toString()).searchParams;
-    sp.set("filter", JSON.stringify(filter));
-    window.history.pushState(null, document.title, "?" + sp.toString());
-}
 
 interface StickySettings {
     dateDisplay?: DateDisplay;
     dateRange?: DateRange;
     darkTheme?: boolean;
     zScore?: string;
-    sort?: string;
+    sorts?: string;
+    pageSize?: number;
 }
 
 function getStickySettings(): StickySettings {
@@ -97,7 +70,6 @@ class App extends React.Component<any, AppState> {
     };
 
     setDarkTheme = (darkTheme: boolean): Promise<void> => {
-        console.log("settting", darkTheme);
         const ss = getStickySettings();
         ss.darkTheme = darkTheme;
         setStickySettings(ss);
@@ -155,16 +127,15 @@ class App extends React.Component<any, AppState> {
 
     afterGetStories = () => {
         window.scrollTo(0, 0);
-        // Set filter to URL
-        setFilterToUrl(this.state.filter);
 
         // Set sticky filter settings if set
         const ss = getStickySettings();
+        ss.pageSize = this.state.filter.pageSize;
         if (this.state.filter.zScore) {
             ss.zScore = JSON.stringify(this.state.filter.zScore);
         }
         if (this.state.filter.sort) {
-            ss.sort = JSON.stringify(this.state.filter.sort);
+            ss.sorts = JSON.stringify(this.state.filter.sort);
         }
         setStickySettings(ss);
     };
@@ -172,19 +143,12 @@ class App extends React.Component<any, AppState> {
     constructor(props: any) {
         super(props);
         const stickySettings = getStickySettings();
-        const defaultFilter = getFilterFromUrl();
-
-        // Apply sticky settings to filter if no URL filter is present
-        try {
-            const sp = new URL(window.location.toString()).searchParams;
-            if (!sp.toString()) {
-                // TODO: validate the JSON.parse usage
-                if (stickySettings.zScore) defaultFilter.zScore = JSON.parse(stickySettings.zScore);
-                if (stickySettings.sort) defaultFilter.sort = JSON.parse(stickySettings.sort);
-            }
-        } catch (e) {
-            console.warn(e);
-        }
+        const defaultFilter: StoryRankingFilter = {
+            pageSize: 50,
+            pageNumber: 0,
+            zScore: validateNumberFilter(stickySettings.zScore),
+            sort: validateSorts(stickySettings.sorts) || [{ sort: "timestamp", asc: false }],
+        };
 
         this.state = {
             stories: [],

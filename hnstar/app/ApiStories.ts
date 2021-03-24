@@ -32,7 +32,7 @@ export interface FloatFilter {
 }
 
 export interface StoryRankingSort {
-    sort: "timestamp" | "score" | "stars";
+    sort: "timestamp" | "score";
     asc: boolean;
 }
 
@@ -74,4 +74,52 @@ export function validateStory(story: Story): string | null {
     if (typeof story.title !== "string" || !story.title || !story.title.trim()) return "Invalid story: bad title";
     story.key = story.storyId;
     return null;
+}
+
+export function validateNumberFilter(filterString: string | undefined): IntFilter | undefined {
+    if (!filterString) return undefined;
+
+    try {
+        const filter = JSON.parse(filterString);
+        const keys = Object.keys(filter);
+        if (keys.length <= 2) {
+            const lt = filter.lt ? parseInt(filter.lt) : undefined;
+            const gt = filter.gt ? parseInt(filter.gt) : undefined;
+            return { lt, gt };
+        }
+
+        return undefined;
+    } catch (e) {
+        console.error("Invalid filter", e);
+        return undefined;
+    }
+}
+
+export function validateSorts(sortString: string | undefined): StoryRankingSort[] | undefined {
+    if (!sortString) return undefined;
+
+    try {
+        const sorts = JSON.parse(sortString);
+        if (!sorts.length) {
+            return undefined;
+        }
+
+        const validSorts = [];
+        for (const sort of sorts) {
+            const keys = Object.keys(sort);
+            if (
+                keys.length == 2 &&
+                sort.hasOwnProperty("sort") &&
+                sort.hasOwnProperty("asc") &&
+                (sort.sort === "timestamp" || sort.sort === "score")
+            ) {
+                validSorts.push(sort);
+            }
+        }
+
+        return validSorts;
+    } catch (e) {
+        console.error("Invalid sort", e);
+        return undefined;
+    }
 }
