@@ -101,19 +101,13 @@ class App extends React.Component<any, AppState> {
         const request = getStoriesRequest(this.state.filter);
         try {
             const response = await fetch(request);
-            if (response.status !== 200) {
-                console.warn(response);
-                return;
-            }
+            if (response.status !== 200) throw `Status indicates failure: ${response.status}`;
 
             const rawStories = (await response.json()) as Story[];
             const stories: Story[] = [];
             for (const story of rawStories) {
                 const error = validateStory(story);
-                if (error) {
-                    console.warn(error, story);
-                    return;
-                }
+                if (error) throw `Invalid story: ${JSON.stringify(story)}`;
 
                 stories.push(story);
             }
@@ -122,6 +116,7 @@ class App extends React.Component<any, AppState> {
         } catch (e) {
             console.error(e);
             this.setState({ ...this.state, stories: [], loading: false });
+            alert(`Could not get stories: ${e}`);
         }
     };
 

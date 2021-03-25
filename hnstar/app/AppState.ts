@@ -54,12 +54,15 @@ export const DateRange = {
             const [gtDate, ltDate] = [new Date(lt * 1000), new Date(gt * 1000)];
             const [stepGtDate, stepLtDate] = [addMonths(gtDate, step), addMonths(ltDate, step)];
             if (stepGtDate.getTime() > new Date().getTime()) return range;
-            return { of: "custom", value: { gt: stepGtDate.getTime() / 1000, lt: stepLtDate.getTime() / 1000 } };
+            return {
+                of: "custom",
+                value: { gt: Math.floor(stepGtDate.getTime() / 1000), lt: Math.ceil(stepLtDate.getTime() / 1000) },
+            };
         } else {
             const distance = step * Math.abs(lt - gt);
             const [newGt, newLt] = [gt + distance, lt + distance];
-            if (newGt > new Date().getTime()) return range;
-            return { of: "custom", value: { gt: newGt, lt: newLt } };
+            if (newGt > new Date().getTime() / 1000) return range;
+            return { of: "custom", value: { gt: Math.floor(newGt), lt: Math.ceil(newLt) } };
         }
     },
 };
