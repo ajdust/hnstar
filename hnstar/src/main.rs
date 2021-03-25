@@ -86,7 +86,7 @@ impl AppState {
 }
 
 #[post("/authenticate/{mode}")]
-async fn authenticate(req: HttpRequest, data: web::Data<AppState>, body:web::Bytes, mode: web::Path<String>) -> impl Responder {
+async fn authenticate(req: HttpRequest, data: web::Data<AppState>, body: web::Bytes, mode: web::Path<String>) -> impl Responder {
     let m = mode.as_str();
     if m == "mirror" {
         let r = body.to_vec();
@@ -154,7 +154,7 @@ async fn authenticate(req: HttpRequest, data: web::Data<AppState>, body:web::Byt
             HttpResponse::InternalServerError().body(response.text().await.unwrap())
         } else {
             HttpResponse::BadRequest().body(format!("Status: {} = {}", status, response.text().await.unwrap()))
-        }
+        };
     } else {
         HttpResponse::NotFound().finish()
     }
@@ -254,14 +254,14 @@ struct PgRegex {
 #[derive(Deserialize)]
 struct StoryRankingFilter {
     timestamp: Option<BigIntFilter>,
-    #[serde(rename="pageSize")]
+    #[serde(rename = "pageSize")]
     page_size: Option<i32>,
-    #[serde(rename="pageNumber")]
+    #[serde(rename = "pageNumber")]
     page_number: Option<i32>,
     title: Option<PgRegex>,
     url: Option<PgRegex>,
     score: Option<IntFilter>,
-    #[serde(rename="zScore")]
+    #[serde(rename = "zScore")]
     z_score: Option<FloatFilter>,
     status: Option<i32>,
     flags: Option<i32>,
@@ -272,7 +272,7 @@ struct StoryRankingFilter {
 
 #[derive(Serialize)]
 struct GetStory {
-    #[serde(rename="storyId")]
+    #[serde(rename = "storyId")]
     story_id: i64,
     score: i32,
     timestamp: i64,
@@ -282,8 +282,8 @@ struct GetStory {
     descendants: i32,
     stars: Option<i32>,
     flags: Option<i32>,
-    #[serde(rename="fullCount")]
-    full_count: i32
+    #[serde(rename = "fullCount")]
+    full_count: i32,
 }
 
 impl From<&tokio_postgres::row::Row> for GetStory {
@@ -309,7 +309,7 @@ impl From<&tokio_postgres::row::Row> for GetStory {
             descendants,
             stars,
             flags,
-            full_count
+            full_count,
         }
     }
 }
@@ -506,10 +506,10 @@ fn get_query<'a>(model: &StoryRankingFilter, user_id: i32) -> Result<QueryParame
 
     let query = format!("{} \n{} \n{}", from_clause, where_clause, sort_clause);
     #[cfg(feature = "debug")]
-    {
-        println!("{}", &query);
-        println!("{:?}", parameters);
-    }
+        {
+            println!("{}", &query);
+            println!("{:?}", parameters);
+        }
     Ok(QueryParameters { query, parameters })
 }
 
@@ -553,7 +553,7 @@ async fn get_story_ranking(req: HttpRequest, data: web::Data<AppState>, model: w
                         email: None,
                         name: None,
                         created: chrono::Utc::now().naive_utc(),
-                        updated: chrono::Utc::now().naive_utc()
+                        updated: chrono::Utc::now().naive_utc(),
                     },
                 },
                 Err(err) => {
