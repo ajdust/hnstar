@@ -669,7 +669,7 @@ async fn main() -> std::io::Result<()> {
         if let Some(static_directory) = static_directory {
             let path = static_directory.to_str().unwrap();
             app.service(actix_files::Files::new(
-                "/assets", path).show_files_listing())
+                "/", path).index_file("index.html"))
         } else {
             app
         }
