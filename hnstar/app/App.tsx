@@ -145,6 +145,14 @@ class App extends React.Component<any, AppState> {
             sort: validateSorts(stickySettings.sorts) || [{ sort: "timestamp", asc: false }],
         };
 
+        if (stickySettings.dateRange) {
+            if (stickySettings.dateRange.of === "custom") {
+                defaultFilter.timestamp = stickySettings.dateRange.value;
+            } else {
+                defaultFilter.timestamp = { gt: DateRange.getGreaterThan(stickySettings.dateRange) };
+            }
+        }
+
         this.state = {
             stories: [],
             dateDisplay: stickySettings.dateDisplay || { of: "distance" },
