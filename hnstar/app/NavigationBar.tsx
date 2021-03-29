@@ -129,9 +129,6 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                 <Navbar.Toggle aria-controls="basic-navbar-nav" />
                 <Navbar.Collapse id="basic-navbar-nav">
                     <Nav className="mr-auto">
-                        {/*<Nav.Link style={{ minWidth: "4rem" }} onClick={handleShowSignIn}>*/}
-                        {/*    sign in*/}
-                        {/*</Nav.Link>*/}
                         <Nav.Link onClick={this.showFilter}>filter</Nav.Link>
                         <Nav.Link onClick={this.showSettings}>settings</Nav.Link>
                     </Nav>
@@ -518,30 +515,6 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
         return (
             <>
                 {this.getNavbar()}
-                {/*<Modal show={showSignIn} onHide={handleHideSignIn}>*/}
-                {/*    <Modal.Body>*/}
-                {/*        <Form.Group controlId="formBasicEmail">*/}
-                {/*            <Form.Label>Username</Form.Label>*/}
-                {/*            <Form.Control type="email" placeholder="Enter email" />*/}
-                {/*        </Form.Group>*/}
-
-                {/*        <Form.Group controlId="formBasicPassword">*/}
-                {/*            <Form.Label>Password</Form.Label>*/}
-                {/*            <Form.Control type="password" placeholder="Password" />*/}
-                {/*        </Form.Group>*/}
-                {/*        <Form.Group controlId="formBasicCheckbox">*/}
-                {/*            <Form.Check type="checkbox" label="Remember me" checked />*/}
-                {/*        </Form.Group>*/}
-                {/*    </Modal.Body>*/}
-                {/*    <Modal.Footer>*/}
-                {/*        <Button variant="secondary" onClick={handleHideSignIn}>*/}
-                {/*            Close*/}
-                {/*        </Button>*/}
-                {/*        <Button variant="primary" onClick={handleHideSignIn}>*/}
-                {/*            Sign In*/}
-                {/*        </Button>*/}
-                {/*    </Modal.Footer>*/}
-                {/*</Modal>*/}
                 {this.getSettingsModal()}
                 {this.getFilterModal()}
             </>
