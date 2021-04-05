@@ -407,9 +407,10 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                                     if (value === 0) {
                                         await this.setDraftFilter({ ...state.draftFilter, zScore: {} });
                                     } else {
+                                        const chose = parseFloat(((value / 100) * 4.0 - 2.0).toFixed(3));
                                         await this.setDraftFilter({
                                             ...state.draftFilter,
-                                            zScore: { ...state.draftFilter.zScore, gt: (value / 100) * 4.0 - 2.0 },
+                                            zScore: { ...state.draftFilter.zScore, gt: chose },
                                         });
                                     }
                                 }}

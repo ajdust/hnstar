@@ -6,6 +6,7 @@ import {
     Story,
     StoryRankingFilter,
     validateNumberFilter,
+    validatePageSize,
     validateSorts,
     validateStory,
 } from "./ApiStories";
@@ -127,6 +128,7 @@ class App extends React.Component<any, AppState> {
         const ss = getStickySettings();
         ss.pageSize = this.state.filter.pageSize;
         if (this.state.filter.zScore) {
+            console.log(`Settings zScore of ${JSON.stringify(this.state.filter.zScore)}`);
             ss.zScore = JSON.stringify(this.state.filter.zScore);
         }
         if (this.state.filter.sort) {
@@ -138,12 +140,17 @@ class App extends React.Component<any, AppState> {
     constructor(props: any) {
         super(props);
         const stickySettings = getStickySettings();
+        const ssZScore = validateNumberFilter(stickySettings.zScore, -4, 4);
+        console.warn("crap", ssZScore);
         const defaultFilter: StoryRankingFilter = {
-            pageSize: 50,
+            pageSize: validatePageSize(stickySettings.pageSize) || 50,
             pageNumber: 0,
-            zScore: validateNumberFilter(stickySettings.zScore),
+            zScore: ssZScore,
             sort: validateSorts(stickySettings.sorts) || [{ sort: "timestamp", asc: false }],
         };
+
+        console.log("Sticky settings", stickySettings);
+        console.log("Default filter", defaultFilter);
 
         if (stickySettings.dateRange) {
             if (stickySettings.dateRange.of === "custom") {
