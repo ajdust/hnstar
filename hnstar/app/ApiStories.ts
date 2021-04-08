@@ -1,6 +1,4 @@
-// Webpack defined variable ENVIRONMENT
-// @ts-ignore
-const API_URL = ENVIRONMENT && ENVIRONMENT.toLowerCase() === "production" ? "/hnstar/" : "/";
+const API_URL = "/";
 
 export interface Story {
     storyId: number;
