@@ -76,18 +76,36 @@ export function validateStory(story: Story): string | null {
     return null;
 }
 
-export function validateNumberFilter(filterString: string | undefined): IntFilter | undefined {
+export function validatePageSize(pageSize: number | undefined): number | null {
+    if (typeof pageSize !== "number") return null;
+    if (pageSize <= 0 || pageSize > 300) {
+        return null;
+    }
+
+    return pageSize;
+}
+
+export function validateNumberFilter(
+    filterString: string | undefined,
+    min: number,
+    max: number
+): IntFilter | undefined {
     if (!filterString) return undefined;
+
+    function between(v: number, min: number, max: number): boolean {
+        return min < v && v < max;
+    }
 
     try {
         const filter = JSON.parse(filterString);
         const keys = Object.keys(filter);
         if (keys.length <= 2) {
-            const lt = filter.lt ? parseInt(filter.lt) : undefined;
-            const gt = filter.gt ? parseInt(filter.gt) : undefined;
-            return { lt, gt };
+            const lt = typeof filter.lt === "number" && between(filter.lt, min, max) ? filter.lt : undefined;
+            const gt = typeof filter.gt === "number" && between(filter.gt, min, max) ? filter.gt : undefined;
+            return { lt: lt, gt: gt };
         }
 
+        console.error(`Invalid filter: ${filterString}`);
         return undefined;
     } catch (e) {
         console.error("Invalid filter", e);
