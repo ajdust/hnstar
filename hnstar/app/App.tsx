@@ -141,7 +141,6 @@ class App extends React.Component<any, AppState> {
         super(props);
         const stickySettings = getStickySettings();
         const ssZScore = validateNumberFilter(stickySettings.zScore, -4, 4);
-        console.warn("crap", ssZScore);
         const defaultFilter: StoryRankingFilter = {
             pageSize: validatePageSize(stickySettings.pageSize) || 50,
             pageNumber: 0,
