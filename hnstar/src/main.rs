@@ -1,15 +1,17 @@
 mod aliases;
 mod error_util;
 
-use actix_web::{post, App, HttpResponse, HttpRequest, HttpServer, Responder, web, error};
+use actix_web::{App, error, HttpRequest, HttpResponse, HttpServer, post, Responder, web, dev, http};
 use aliases::*;
 use chrono::{Utc, Duration, DateTime, NaiveDateTime};
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 use error_util::WebError;
-use std::net::ToSocketAddrs;
+use std::net::{ToSocketAddrs, IpAddr};
 use tokio_postgres::NoTls;
 use serde::{Deserialize, Serialize};
 use postgres_types::ToSql;
+use actix_web_opentelemetry::RequestMetrics;
+use opentelemetry::global;
 
 pub fn time_to_json(t: NaiveDateTime) -> String {
     DateTime::<Utc>::from_utc(t, Utc).to_rfc3339()
@@ -557,6 +559,7 @@ async fn get_story_ranking(req: HttpRequest, data: web::Data<AppState>, model: w
                     },
                 },
                 Err(err) => {
+                    println!("{:?}", err);
                     return err.to_response();
                 }
             }
@@ -660,7 +663,30 @@ async fn main() -> std::io::Result<()> {
             .service(set_story_ranking)
             .service(get_story_ranking);
 
+        // Request metrics middleware
+        let exporter = opentelemetry_prometheus::exporter().init();
+        let meter = global::meter("actix_web");
+        let metrics_route = |req: &dev::ServiceRequest| {
+            if req.path() != "/metrics" || req.method() != http::Method::GET {
+                return false;
+            }
+
+            let addr = match req.peer_addr() {
+                Some(addr) => addr,
+                None => { return false; }
+            };
+
+            let allowed: IpAddr = "127.0.0.1".parse().unwrap();
+            if addr.ip() != allowed {
+                return false
+            }
+
+            true
+        };
+        let request_metrics = RequestMetrics::new(meter, Some(metrics_route), Some(exporter));
+
         let app = App::new()
+            .wrap(request_metrics.clone())
             .data(my_app_state.clone())
             .app_data(json_cfg)
             .service(ranks)
