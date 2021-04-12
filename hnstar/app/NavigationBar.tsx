@@ -398,7 +398,7 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                                 disabled={props.loading}
                                 value={
                                     state.draftFilter.zScore?.gt || state.draftFilter.zScore?.gt === 0
-                                        ? Math.floor(((state.draftFilter.zScore.gt + 2.0) / 4.0) * 100)
+                                        ? Math.floor(((state.draftFilter.zScore.gt + 1.0) / 2.0) * 100)
                                         : 0.0
                                 }
                                 onChange={async (e: ChangeEvent<HTMLInputElement>) => {
@@ -407,7 +407,7 @@ class NavigationBar extends React.Component<NavigationProps, NavigationState> {
                                     if (value === 0) {
                                         await this.setDraftFilter({ ...state.draftFilter, zScore: {} });
                                     } else {
-                                        const chose = parseFloat(((value / 100) * 4.0 - 2.0).toFixed(3));
+                                        const chose = parseFloat(((value / 100) * 2.0 - 1.0).toFixed(3));
                                         await this.setDraftFilter({
                                             ...state.draftFilter,
                                             zScore: { ...state.draftFilter.zScore, gt: chose },
